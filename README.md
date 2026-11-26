@@ -20,3 +20,8 @@
 
 Settings → Pages → Source: `Deploy from a branch` → 브랜치를 고르고 `/ (root)` → Save.
 몇 분 뒤 `https://hms36903690.github.io/review-helper/` 주소로 열 수 있습니다.
+
+## PC 바탕화면에 설치
+
+Chrome이나 Edge로 위 주소를 열고, 화면 맨 위 **💻 설치하기** 버튼(또는 주소창 오른쪽 끝의 설치 아이콘)을 누르면
+바탕화면과 시작 메뉴에 아이콘이 생기고, 따로 창이 뜨는 프로그램처럼 쓸 수 있습니다.
