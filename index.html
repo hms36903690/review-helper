@@ -64,12 +64,23 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .seg small{display:block;font-weight:400;color:var(--muted);font-size:12px}
 .seg input:checked+span{border-color:var(--accent);background:var(--accent-2);color:var(--accent)}
 .seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
+.tabs button{background:transparent;color:var(--muted);font-weight:700;padding:10px}
+.tabs button[aria-selected="true"]{background:var(--accent);color:#fff}
+.q{margin-top:10px}
+.q label{font-weight:600;font-size:14px;margin:10px 0 4px}
+.item{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:var(--bg)}
+.item h4{margin:0 0 6px;font-size:15px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.item .meta{color:var(--muted);font-size:12.5px;font-weight:400}
+.item .out{font-size:14.5px;max-height:320px;overflow:auto}
+.small{padding:6px 10px;font-size:13px}
+.danger{color:var(--bad)}
 </style>
 </head>
 <body>
 <main>
   <h1>📝 쿠팡 리뷰 도우미</h1>
-  <p class="sub">체험단 리뷰도, 내돈내산 리뷰도! 상품명을 넣으면 인터넷에서 상품 정보와 다른 구매자들의 평을 찾아, 내 사용 경험을 바탕으로 리뷰 초안을 써 줍니다.</p>
+  <p class="sub">체험단 리뷰도, 내돈내산 리뷰도! 상품명과 내 메모를 넣으면 인터넷에서 상품 정보를 찾아, 내가 직접 쓴 것 같은 리뷰 초안을 써 줍니다.</p>
 
   <div id="installCard" class="card hidden">
     <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -94,6 +105,11 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
     </details>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabOne" aria-selected="true">한 개 쓰기</button>
+    <button role="tab" id="tabMany" aria-selected="false">여러 개 한꺼번에</button>
+  </div>
+
   <div class="card">
     <label>리뷰 종류</label>
     <div class="seg" id="kind">
@@ -101,11 +117,24 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
       <label><input type="radio" name="kind" value="own"><span>💳 내돈내산<small>내 돈으로 직접 구매</small></span></label>
     </div>
 
+    <div id="oneBox">
     <label for="product">상품명 <span class="hint">(쿠팡 상품명 그대로 붙여넣어도 돼요)</span></label>
     <input id="product" type="text" placeholder="예: 쿠쿠 6인용 IH 전기압력밥솥 CRP-...">
 
     <label for="experience">내가 직접 써 보고 느낀 점 <span class="hint">(짧게 메모만 해도 됩니다. 내 경험이 많이 담길수록 도움이 되는 리뷰가 됩니다)</span></label>
     <textarea id="experience" placeholder="예: 2주 사용. 4인 가족. 밥맛 확실히 차지고 좋음. 취사 30분 정도. 소음 거의 없음. 내솥 무거워서 씻기 좀 불편. 이전엔 10년 된 밥솥 썼음."></textarea>
+    <div class="btns"><button class="ghost" id="askBtn">🙋 무엇을 적을지 AI가 물어봐 주기</button></div>
+    <div id="qBox" class="q hidden"></div>
+    </div>
+
+    <div id="manyBox" class="hidden">
+      <label for="batch">상품 목록 <span class="hint">(한 줄에 하나씩, <b>상품명 / 내 메모</b> 형식(/ 앞뒤 한 칸 띄우기). 메모가 없으면 써 봐야 아는 부분은 빈칸으로 나와요)</span></label>
+      <textarea id="batch" style="min-height:150px" placeholder="쿠쿠 6인용 전기압력밥솥 / 2주 사용, 밥맛 좋음, 내솥 무거움&#10;다이슨 V12 무선청소기 / 한 달 사용, 흡입력 좋음, 배터리 40분, 거치대 설치 번거로움&#10;에어팟 프로 2 / 출퇴근용, 노캔 확실, 귀가 좀 아픔"></textarea>
+      <p class="hint" id="batchCount"></p>
+    </div>
+
+    <label for="extra">추가 요청 <span class="hint">(선택. 예: "아기 키우는 집 입장에서", "가격 대비 만족도 강조")</span></label>
+    <input id="extra" type="text" placeholder="AI에게 따로 부탁할 것이 있으면 적어 주세요">
 
     <div class="row">
       <div>
@@ -129,6 +158,7 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
     <label class="check"><input id="disclose" type="checkbox" checked> <span id="discloseText"></span></label>
 
     <button class="primary" id="go">리뷰 만들기</button>
+    <button class="ghost hidden" id="stopBtn" style="width:100%;margin-top:8px">멈추기</button>
   </div>
 
   <div id="status"></div>
@@ -147,10 +177,23 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
     <div id="checks" class="out"></div>
   </div>
 
+  <div id="batchCard" class="card hidden">
+    <h3 style="margin-top:0">여러 개 결과</h3>
+    <div id="batchOut"></div>
+  </div>
+
   <div id="srcCard" class="card hidden">
     <details>
       <summary>🔎 참고한 자료 <span id="srcCount" class="hint"></span></summary>
       <ul id="sources" class="sources"></ul>
+    </details>
+  </div>
+  <div class="card">
+    <details id="histBox">
+      <summary>🗂️ 작성 기록 <span id="histCount" class="hint"></span></summary>
+      <p class="hint">최근 50개까지 이 기기에만 저장돼요.</p>
+      <div id="histList"></div>
+      <div class="btns"><button class="ghost small danger" id="histClear">기록 모두 지우기</button></div>
     </details>
   </div>
 </main>
@@ -223,20 +266,100 @@ function syncKind(){
 document.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", syncKind));
 syncKind();
 
-let lastSources = [];
 let running = false;
+let abortCtl = null;
+let mode = "one";
+let lastSources = [];
 
-async function generate(){
-  const apiKey = (store.get(KEY) || $("apiKey").value).trim();
+// ---------- 탭 ----------
+function setMode(m){
+  mode = m;
+  $("tabOne").setAttribute("aria-selected", m === "one");
+  $("tabMany").setAttribute("aria-selected", m === "many");
+  $("oneBox").classList.toggle("hidden", m !== "one");
+  $("manyBox").classList.toggle("hidden", m !== "many");
+  $("go").textContent = m === "one" ? "리뷰 만들기" : "리뷰 여러 개 만들기";
+  store.set("review-helper-mode", m);
+}
+$("tabOne").onclick = () => setMode("one");
+$("tabMany").onclick = () => setMode("many");
+setMode(store.get("review-helper-mode") === "many" ? "many" : "one");
+
+function parseBatch(){
+  return $("batch").value.split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+    // 구분: "|" 또는 앞뒤 띄어쓴 " / " (상품명 안의 500ml/2개 같은 /는 그대로 둠)
+    const m = l.includes("|") ? /\|/.exec(l) : /\s\/\s/.exec(l);
+    return !m ? { product: l, exp: "" } : { product: l.slice(0, m.index).trim(), exp: l.slice(m.index + m[0].length).trim() };
+  }).filter(x => x.product);
+}
+$("batch").addEventListener("input", () => {
+  const n = parseBatch().length;
+  $("batchCount").textContent = n ? `${n}개 · 예상 비용 약 ${(n*300).toLocaleString()}~${(n*500).toLocaleString()}원` : "";
+});
+
+function getKey(){
+  const k = (store.get(KEY) || $("apiKey").value).trim();
+  if (!k){ $("keyBox").open = true; status("먼저 Claude API 키를 넣어 주세요.", true); }
+  return k;
+}
+const client = (apiKey) => new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+function errMsg(e){
+  let m = e?.message || String(e);
+  if (e instanceof Anthropic.AuthenticationError) m = "API 키가 올바르지 않아요. 키를 다시 확인해 주세요.";
+  else if (e instanceof Anthropic.RateLimitError) m = "요청이 많아요. 1분쯤 뒤에 다시 해 보세요.";
+  else if (e instanceof Anthropic.APIUserAbortError || e?.name === "AbortError") m = "멈췄어요.";
+  else if (e instanceof Anthropic.APIConnectionError) m = "인터넷 연결을 확인해 주세요.";
+  else if (e instanceof Anthropic.APIError && e.status === 400 && /credit/i.test(m)) m = "API 크레딧이 부족해요. console.anthropic.com 에서 충전해 주세요.";
+  return m;
+}
+
+// ---------- AI 질문 ----------
+$("askBtn").onclick = async () => {
+  const apiKey = getKey(); if (!apiKey) return;
   const product = $("product").value.trim();
-  if (!apiKey){ $("keyBox").open = true; status("먼저 Claude API 키를 넣어 주세요.", true); return; }
-  if (!product){ status("상품명을 넣어 주세요.", true); $("product").focus(); return; }
+  if (!product){ status("상품명을 먼저 넣어 주세요.", true); $("product").focus(); return; }
   if (running) return;
-  running = true; $("go").disabled = true;
-  ["resultCard","checkCard","srcCard"].forEach(id => $(id).classList.add("hidden"));
-  $("out").textContent = ""; lastSources = [];
+  running = true; $("askBtn").disabled = true;
+  status("🙋 무엇을 물어볼지 생각하고 있어요…");
+  try {
+    const msg = await client(apiKey).messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 2000,
+      output_config: { effort: "low", format: { type: "json_schema", schema: {
+        type: "object", additionalProperties: false, required: ["questions"],
+        properties: { questions: { type: "array", items: { type: "string" } } } } } },
+      messages: [{ role: "user", content:
+`쿠팡 리뷰를 쓰려는 사람에게, 직접 써 본 사람만 답할 수 있는 짧은 질문 4~5개를 만들어 주세요.
+이 상품을 사는 사람들이 가장 궁금해할 것(크기 체감, 소음, 세척, 효과, 사용 기간, 누가 쓰는지 등) 위주로, 이미 메모에 있는 내용은 묻지 마세요.
+질문은 한 문장, 쉬운 말로. 이모지는 쓰지 마세요.
+상품명: ${product}
+지금 메모: ${$("experience").value.trim() || "(없음)"}` }],
+    });
+    if (msg.stop_reason === "refusal") throw new Error("질문을 만들지 못했어요. 다시 해 보세요.");
+    const txt = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
+    const qs = (JSON.parse(txt).questions || []).slice(0, 6);
+    const box = $("qBox"); box.innerHTML = ""; box.classList.remove("hidden");
+    const note = document.createElement("p"); note.className = "hint";
+    note.textContent = "아는 것만 짧게 답해 주세요. 빈칸은 그냥 두면 돼요. 답은 리뷰 만들 때 메모에 합쳐서 써요.";
+    box.appendChild(note);
+    qs.forEach((q, i) => {
+      const l = document.createElement("label"); l.textContent = q; l.htmlFor = "qa" + i;
+      const inp = document.createElement("input"); inp.type = "text"; inp.id = "qa" + i; inp.dataset.q = q;
+      box.append(l, inp);
+    });
+    status("질문에 답하고 '리뷰 만들기'를 누르세요.");
+  } catch (e){ console.error(e); status("❌ " + errMsg(e), true); }
+  finally { running = false; $("askBtn").disabled = false; }
+};
+function answersText(){
+  return [...document.querySelectorAll("#qBox input")].filter(i => i.value.trim())
+    .map(i => `- ${i.dataset.q} → ${i.value.trim()}`).join("\n");
+}
 
-  const exp = $("experience").value.trim();
+// ---------- 리뷰 한 개 생성 (공통) ----------
+async function writeReview({ apiKey, product, exp, onText, onStatus, signal }){
+  const extra = $("extra").value.trim();
   const userMsg = `상품명: ${product}
 
 내 사용 경험:
@@ -245,99 +368,153 @@ ${exp || "(아직 적지 않음 — 직접 써 봐야 아는 부분은 모두 [�
 말투: ${$("tone").value}
 본문 길이: ${$("length").value}
 리뷰 종류: ${KINDS[kind()].label}
+${extra ? "추가 요청: " + extra : ""}
 ${$("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 넣어 주세요.` : ''}`;
 
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  const c = client(apiKey);
   const messages = [{ role: "user", content: userMsg }];
-  let finalText = "";
-  status("🔎 상품 정보를 찾고 있어요… (30초~1분쯤 걸려요)");
-
-  try {
-    for (let turn = 0; turn < 4; turn++){
-      const stream = client.beta.messages.stream({
-        model: "claude-opus-5-5",
-        max_tokens: 16000,
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        output_config: { effort: "medium" },
-        system: SYSTEM,
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6, user_location: { type: "approximate", country: "KR" } }],
-        messages,
-      });
-      // 검색이 끝난 뒤의 글만 화면에 보여 줌
-      stream.on("streamEvent", (ev) => {
-        if (ev.type === "content_block_start"){
-          const t = ev.content_block.type;
-          if (t === "server_tool_use"){ finalText = ""; status("🔎 검색 중: " + (ev.content_block.input?.query || "상품 정보")); }
-          if (t === "text" && finalText === "") status("✍️ 리뷰를 쓰고 있어요…");
-        }
-        if (ev.type === "content_block_delta" && ev.delta.type === "text_delta"){
-          finalText += ev.delta.text;
-          render(finalText, true);
-        }
-        if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta"){
-          const m = /"query"\s*:\s*"([^"]+)"/.exec(ev.delta.partial_json || "");
-          if (m) status("🔎 검색 중: " + m[1]);
-        }
-      });
-      const msg = await stream.finalMessage();
-      collectSources(msg.content);
-      if (msg.stop_reason === "refusal"){ throw new Error("이 요청은 처리되지 않았어요. 상품명을 조금 바꿔서 다시 해 보세요."); }
-      if (msg.stop_reason === "pause_turn"){ messages.push({ role: "assistant", content: msg.content }); continue; }
-      // 최종 텍스트: 마지막 검색 결과 뒤의 text 블록들
-      let idx = -1; msg.content.forEach((b,i) => { if (b.type === "web_search_tool_result" || b.type === "server_tool_use") idx = i; });
-      const txt = msg.content.slice(idx+1).filter(b => b.type === "text").map(b => b.text).join("");
-      if (txt.trim()) finalText = txt;
-      if (msg.stop_reason === "max_tokens") status("⚠️ 글이 길어 중간에 끊겼을 수 있어요.", true);
-      else status("완성! 내용을 확인하고 다듬어서 올려 주세요.");
-      break;
-    }
-    render(finalText, false);
-  } catch (e) {
-    console.error(e);
-    let m = e?.message || String(e);
-    if (e instanceof Anthropic.AuthenticationError) m = "API 키가 올바르지 않아요. 키를 다시 확인해 주세요.";
-    else if (e instanceof Anthropic.RateLimitError) m = "요청이 많아요. 1분쯤 뒤에 다시 해 보세요.";
-    else if (e instanceof Anthropic.APIConnectionError) m = "인터넷 연결을 확인해 주세요.";
-    else if (e instanceof Anthropic.APIError && e.status === 400 && /credit/i.test(m)) m = "API 크레딧이 부족해요. console.anthropic.com 에서 충전해 주세요.";
-    status("❌ " + m, true);
-  } finally {
-    running = false; $("go").disabled = false;
-  }
-}
-
-function collectSources(content){
-  for (const b of content){
-    if (b.type === "web_search_tool_result" && Array.isArray(b.content)){
-      for (const r of b.content){
-        if (r.type === "web_search_result" && /^https:\/\//.test(r.url) && !lastSources.some(s => s.url === r.url))
-          lastSources.push({ url: r.url, title: r.title || r.url });
+  const sources = [];
+  let text = "";
+  for (let turn = 0; turn < 4; turn++){
+    const stream = c.beta.messages.stream({
+      model: "claude-opus-5-5",
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "medium" },
+      system: SYSTEM,
+      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6, user_location: { type: "approximate", country: "KR" } }],
+      messages,
+    }, { signal });
+    stream.on("streamEvent", (ev) => {
+      if (ev.type === "content_block_start"){
+        const t = ev.content_block.type;
+        if (t === "server_tool_use"){ text = ""; onStatus("🔎 검색 중: " + (ev.content_block.input?.query || "상품 정보")); }
+        if (t === "text" && text === "") onStatus("✍️ 리뷰를 쓰고 있어요…");
       }
+      if (ev.type === "content_block_delta" && ev.delta.type === "text_delta"){ text += ev.delta.text; onText(text); }
+      if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta"){
+        const m = /"query"\s*:\s*"([^"]+)"/.exec(ev.delta.partial_json || "");
+        if (m) onStatus("🔎 검색 중: " + m[1]);
+      }
+    });
+    const msg = await stream.finalMessage();
+    for (const b of msg.content){
+      if (b.type === "web_search_tool_result" && Array.isArray(b.content))
+        for (const r of b.content)
+          if (r.type === "web_search_result" && /^https:\/\//.test(r.url) && !sources.some(s => s.url === r.url))
+            sources.push({ url: r.url, title: r.title || r.url });
     }
+    if (msg.stop_reason === "refusal") throw new Error("이 상품은 처리되지 않았어요. 상품명을 조금 바꿔서 다시 해 보세요.");
+    if (msg.stop_reason === "pause_turn"){ messages.push({ role: "assistant", content: msg.content }); continue; }
+    let idx = -1; msg.content.forEach((b,i) => { if (b.type === "web_search_tool_result" || b.type === "server_tool_use") idx = i; });
+    const txt = msg.content.slice(idx+1).filter(b => b.type === "text").map(b => b.text).join("");
+    if (txt.trim()) text = txt;
+    return { text: stripPics(text), sources, cut: msg.stop_reason === "max_tokens" };
   }
+  return { text: stripPics(text), sources, cut: true };
 }
 
-function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+// ---------- 실행 ----------
+function startRun(){
+  running = true; abortCtl = new AbortController();
+  $("go").disabled = true; $("stopBtn").classList.remove("hidden");
+  ["resultCard","checkCard","srcCard","batchCard"].forEach(id => $(id).classList.add("hidden"));
+}
+function endRun(){ running = false; abortCtl = null; $("go").disabled = false; $("stopBtn").classList.add("hidden"); }
+$("stopBtn").onclick = () => abortCtl?.abort();
 
+async function runOne(){
+  const apiKey = getKey(); if (!apiKey) return;
+  const product = $("product").value.trim();
+  if (!product){ status("상품명을 넣어 주세요.", true); $("product").focus(); return; }
+  if (running) return;
+  startRun(); $("out").textContent = ""; lastSources = [];
+  const ans = answersText();
+  const exp = [$("experience").value.trim(), ans ? "질문에 대한 내 답:\n" + ans : ""].filter(Boolean).join("\n\n");
+  status("🔎 상품 정보를 찾고 있어요… (30초~1분쯤 걸려요)");
+  try {
+    const r = await writeReview({ apiKey, product, exp, signal: abortCtl.signal, onStatus: status, onText: t => render(t, true) });
+    lastSources = r.sources; render(r.text, false);
+    addHistory(product, r.text);
+    status(r.cut ? "⚠️ 글이 길어 중간에 끊겼을 수 있어요." : "완성! 내용을 확인하고 다듬어서 올려 주세요.", r.cut);
+  } catch (e){ console.error(e); status("❌ " + errMsg(e), true); }
+  finally { endRun(); }
+}
+
+async function runMany(){
+  const apiKey = getKey(); if (!apiKey) return;
+  const list = parseBatch();
+  if (!list.length){ status("상품 목록을 한 줄에 하나씩 넣어 주세요.", true); $("batch").focus(); return; }
+  if (list.length > 20){ status("한 번에 20개까지만 할 수 있어요.", true); return; }
+  if (running) return;
+  startRun();
+  const out = $("batchOut"); out.innerHTML = ""; $("batchCard").classList.remove("hidden");
+  const cards = list.map(({ product }) => {
+    const d = document.createElement("div"); d.className = "item";
+    const h = document.createElement("h4"); const t = document.createElement("span"); t.textContent = product;
+    const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = "대기 중";
+    h.append(t, meta);
+    const body = document.createElement("div"); body.className = "out";
+    const btns = document.createElement("div"); btns.className = "btns hidden";
+    const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사";
+    btns.append(cp); d.append(h, body, btns); out.appendChild(d);
+    return { meta, body, btns, cp };
+  });
+  let done = 0;
+  for (let i = 0; i < list.length; i++){
+    if (abortCtl.signal.aborted){ cards[i].meta.textContent = "멈춤"; continue; }
+    const { product, exp } = list[i]; const c = cards[i];
+    c.meta.textContent = "쓰는 중…";
+    status(`(${i+1}/${list.length}) ${product}`);
+    try {
+      const r = await writeReview({ apiKey, product, exp, signal: abortCtl.signal,
+        onStatus: m => { c.meta.textContent = m.replace(/^\S+\s/, ""); },
+        onText: () => {} });
+      const { review, checks } = splitText(r.text);
+      c.body.innerHTML = fmt(review) + (checks ? '<h3>올리기 전에 확인할 점</h3>' + fmt(checks) : "");
+      c.meta.textContent = /\[직접 확인:/.test(review) ? "완성 · 빈칸 있음" : "완성";
+      c.btns.classList.remove("hidden");
+      c.cp.onclick = () => copyText(review);
+      addHistory(product, r.text); done++;
+    } catch (e){
+      console.error(e);
+      c.meta.textContent = "실패: " + errMsg(e); c.meta.classList.add("danger");
+      if (e instanceof Anthropic.AuthenticationError || /크레딧/.test(errMsg(e))) { abortCtl.abort(); }
+    }
+  }
+  status(`${done}개 완성했어요. 하나씩 확인하고 다듬어서 올려 주세요.`);
+  endRun();
+}
+
+$("go").onclick = () => mode === "one" ? runOne() : runMany();
+$("again").onclick = runOne;
+
+// ---------- 화면 표시 ----------
+// 이모지·그림 문자는 모두 지움 (★☆ 같은 별 기호도 포함)
+const stripPics = (t) => t.replace(/[\p{Extended_Pictographic}★☆✩-✰️‍\u{1F3FB}-\u{1F3FF}]/gu, "").replace(/[ \t]+\n/g, "\n");
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function splitText(text){
   const i = text.indexOf("===확인할 점===");
   return i < 0 ? { review: text.trim(), checks: "" } : { review: text.slice(0,i).trim(), checks: text.slice(i + "===확인할 점===".length).trim() };
 }
-
-// 이모지·그림 문자는 모두 지움 (★☆ 같은 별 기호도 포함)
-const stripPics = (t) => t.replace(/[\p{Extended_Pictographic}\u2605\u2606\u2729-\u2730\uFE0F\u200D\u{1F3FB}-\u{1F3FF}]/gu, "").replace(/[ \t]+\n/g, "\n");
-
-function render(text, streaming){
-  const { review, checks } = splitText(stripPics(text));
-  $("resultCard").classList.remove("hidden");
-  let html = escapeHtml(review)
+function fmt(t){
+  return escapeHtml(t)
     .replace(/\[직접 확인:([^\]]*)\]/g, '<span class="fill">[직접 확인:$1]</span>')
     .replace(/^\[장점\]$/m, '<h3><span class="pill good">장점</span></h3>')
     .replace(/^\[단점\]$/m, '<h3><span class="pill bad">단점</span></h3>')
     .replace(/^\[이런 분께 추천\]$/m, '<h3>이런 분께 추천</h3>');
-  $("out").innerHTML = html;
+}
+// 복사할 때는 화면용 꾸밈 없이 원래 글 그대로
+let currentReview = "";
+function render(text, streaming){
+  const { review, checks } = splitText(stripPics(text));
+  currentReview = review;
+  $("resultCard").classList.remove("hidden");
+  $("out").innerHTML = fmt(review);
   $("fillNotice").classList.toggle("hidden", !/\[직접 확인:/.test(review));
-  if (checks){ $("checkCard").classList.remove("hidden"); $("checks").innerHTML = escapeHtml(checks).replace(/\[직접 확인:([^\]]*)\]/g,'<span class="fill">[직접 확인:$1]</span>'); }
+  $("checkCard").classList.toggle("hidden", !checks);
+  if (checks) $("checks").innerHTML = fmt(checks);
   if (!streaming && lastSources.length){
     $("srcCard").classList.remove("hidden");
     $("srcCount").textContent = `(${lastSources.length}개)`;
@@ -349,6 +526,41 @@ function render(text, streaming){
     }
   }
 }
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); status(/\[직접 확인:/.test(t) ? "📋 복사했어요! 노란 빈칸이 남아 있으니 채우고 올려 주세요." : "📋 복사했어요!"); }
+  catch { status("복사가 안 됐어요. 글을 드래그해서 직접 복사해 주세요.", true); }
+}
+$("copy").onclick = () => copyText(currentReview);
+
+// ---------- 작성 기록 ----------
+const HIST = "review-helper-history";
+function loadHist(){ try { return JSON.parse(store.get(HIST) || "[]"); } catch { return []; } }
+function saveHist(h){ store.set(HIST, JSON.stringify(h.slice(0, 50))); renderHist(); }
+function addHistory(product, text){
+  const h = loadHist(); h.unshift({ id: Date.now() + Math.random(), at: new Date().toISOString(), kind: kind(), product, text }); saveHist(h);
+}
+function renderHist(){
+  const h = loadHist(); const list = $("histList"); list.innerHTML = "";
+  $("histCount").textContent = h.length ? `(${h.length}개)` : "";
+  if (!h.length){ const p = document.createElement("p"); p.className = "hint"; p.textContent = "아직 기록이 없어요."; list.appendChild(p); return; }
+  for (const it of h){
+    const d = document.createElement("div"); d.className = "item";
+    const h4 = document.createElement("h4"); const t = document.createElement("span"); t.textContent = it.product;
+    const meta = document.createElement("span"); meta.className = "meta";
+    meta.textContent = `${it.kind === "own" ? "내돈내산" : "체험단"} · ${new Date(it.at).toLocaleDateString("ko-KR")}`;
+    h4.append(t, meta);
+    const det = document.createElement("details"); const sm = document.createElement("summary"); sm.textContent = "내용 보기";
+    const body = document.createElement("div"); body.className = "out"; const { review } = splitText(it.text); body.innerHTML = fmt(review);
+    det.append(sm, body);
+    const btns = document.createElement("div"); btns.className = "btns";
+    const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사"; cp.onclick = () => copyText(review);
+    const del = document.createElement("button"); del.className = "ghost small danger"; del.textContent = "삭제";
+    del.onclick = () => saveHist(loadHist().filter(x => x.id !== it.id));
+    btns.append(cp, del); d.append(h4, det, btns); list.appendChild(d);
+  }
+}
+$("histClear").onclick = () => { if (confirm("작성 기록을 모두 지울까요?")) saveHist([]); };
+renderHist();
 
 // 앱 설치(바탕화면·홈 화면)
 if ("serviceWorker" in navigator && isSecureContext && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -363,13 +575,6 @@ $("installBtn").onclick = async () => {
 };
 $("installHelpClose").onclick = () => $("installHelp").classList.add("hidden");
 
-$("go").onclick = generate;
-$("again").onclick = generate;
-$("copy").onclick = async () => {
-  const { review } = splitText($("out").innerText);
-  try { await navigator.clipboard.writeText(review); status("📋 복사했어요! 빈칸이 남아 있지 않은지 꼭 확인하세요."); }
-  catch { status("복사가 안 됐어요. 글을 길게 눌러 직접 복사해 주세요.", true); }
-};
 </script>
 </body>
 </html>
