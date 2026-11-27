@@ -74,6 +74,15 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .item .meta{color:var(--muted);font-size:12.5px;font-weight:400}
 .item .out{font-size:14.5px;max-height:320px;overflow:auto}
 .small{padding:6px 10px;font-size:13px}
+.guide{border:1px solid var(--accent);background:var(--accent-2);border-radius:12px;padding:12px 14px;margin-top:12px}
+.guide b.t{display:block;color:var(--accent);margin-bottom:6px}
+.guide ul{margin:0;padding-left:18px;font-size:14.5px}
+.guide li{margin:2px 0}
+.guide .date{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:14px}
+.guide .date input{width:auto;padding:7px 10px}
+.dday{font-weight:700}
+.ok{color:var(--good)} .no{color:var(--bad)}
+.count{font-size:14px;margin:10px 0 0;font-weight:600}
 .danger{color:var(--bad)}
 </style>
 </head>
@@ -115,6 +124,20 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
     <div class="seg" id="kind">
       <label><input type="radio" name="kind" value="trial" checked><span>🎁 체험단<small>제품을 제공받음</small></span></label>
       <label><input type="radio" name="kind" value="own"><span>💳 내돈내산<small>내 돈으로 직접 구매</small></span></label>
+    </div>
+
+    <div id="trialGuide" class="guide">
+      <b class="t">📌 체험단 작성 규칙</b>
+      <ul>
+        <li><b>글자수</b>: 최소 200자 이상 (700자 이내 권장)</li>
+        <li><b>사진</b>: 상품 사진 필수 첨부 (7장 이내 권장)</li>
+        <li><b>작성기한</b>: 초대일 포함 14일 이내 완료</li>
+      </ul>
+      <div class="date">
+        <label for="inviteDate" style="margin:0;font-size:14px">초대일</label>
+        <input type="date" id="inviteDate">
+        <span id="deadlineText"></span>
+      </div>
     </div>
 
     <div id="oneBox">
@@ -166,10 +189,16 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
   <div id="resultCard" class="card hidden">
     <div class="notice" id="fillNotice">노란색 <span class="fill">[직접 확인: …]</span> 부분은 직접 써 봐야 알 수 있는 내용이에요. 내 경험으로 채우거나 지워 주세요.</div>
     <div id="out" class="out"></div>
+    <p id="countLine" class="count"></p>
     <div class="btns">
       <button class="ghost" id="copy">📋 리뷰 복사</button>
       <button class="ghost" id="again">🔄 다시 쓰기</button>
     </div>
+  </div>
+
+  <div id="photoCard" class="card hidden">
+    <h3 style="margin-top:0">📷 찍어서 올릴 사진 <span class="hint">(필수 · 7장 이내)</span></h3>
+    <div id="photos" class="out"></div>
   </div>
 
   <div id="checkCard" class="card hidden">
@@ -246,6 +275,9 @@ const SYSTEM = `당신은 쿠팡 리뷰어(체험단 또는 직접 구매)를 �
 [이런 분께 추천]
 - ...
 
+===찍을 사진===
+- (체험단일 때만) 이 상품 리뷰에 올리면 좋은 사진 구도 5~7개를 한 줄씩. 예: 택배 상자와 구성품 전체, 실제 사용하는 모습, 크기 비교 등. 내돈내산이면 이 섹션은 쓰지 않습니다.
+
 ===확인할 점===
 - 올리기 전에 사용자가 사실인지 확인하거나 채워야 할 것들 (스펙, 가격, 빈칸 등)`;
 
@@ -257,11 +289,46 @@ const KINDS = {
 };
 const kind = () => document.querySelector('input[name=kind]:checked').value;
 const KIND_KEY = "review-helper-kind";
+const LENGTHS = {
+  trial: [["450~650자", "체험단 권장 (450~650자)"], ["250~400자", "짧게 (250~400자)"], ["600~700자", "꽉 채워서 (600~700자)"]],
+  own:   [["600~900자", "보통 (600~900자)"], ["1000~1500자", "자세히 (1000~1500자)"], ["300~500자", "짧게 (300~500자)"]],
+};
+const TRIAL_MIN = 200, TRIAL_MAX = 700;
 function syncKind(){
-  $("discloseText").innerHTML = KINDS[kind()].check;
+  const k = kind();
+  $("discloseText").innerHTML = KINDS[k].check;
   $("disclose").checked = true;
-  store.set(KIND_KEY, kind());
+  $("trialGuide").classList.toggle("hidden", k !== "trial");
+  const sel = $("length"); sel.innerHTML = "";
+  for (const [v, t] of LENGTHS[k]){ const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); }
+  store.set(KIND_KEY, k);
 }
+
+// 작성기한: 초대일 포함 14일 → 마감일 = 초대일 + 13일
+const INVITE_KEY = "review-helper-invite";
+function deadlineOf(inviteStr){
+  if (!inviteStr) return null;
+  const [y, m, d] = inviteStr.split("-").map(Number);
+  return new Date(y, m - 1, d + 13);
+}
+function ddayText(deadline){
+  if (!deadline) return "";
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((deadline - today) / 86400000);
+  const ds = `${deadline.getMonth()+1}/${deadline.getDate()}(${"일월화수목금토"[deadline.getDay()]})`;
+  if (diff > 0) return `마감 ${ds} · D-${diff}`;
+  if (diff === 0) return `마감 ${ds} · 오늘 마감!`;
+  return `마감 ${ds} · ${-diff}일 지남`;
+}
+function syncDeadline(){
+  const v = $("inviteDate").value; store.set(INVITE_KEY, v);
+  const dl = deadlineOf(v); const el = $("deadlineText");
+  el.textContent = dl ? "→ " + ddayText(dl) : "초대받은 날을 넣으면 마감일을 알려 드려요";
+  el.className = dl && Math.round((dl - new Date().setHours(0,0,0,0)) / 86400000) <= 3 ? "dday no" : "dday";
+}
+$("inviteDate").value = store.get(INVITE_KEY);
+$("inviteDate").addEventListener("change", syncDeadline);
+syncDeadline();
 { const saved = store.get(KIND_KEY); const r = document.querySelector(`input[name=kind][value="${saved === "own" ? "own" : "trial"}"]`); r.checked = true; }
 document.querySelectorAll("input[name=kind]").forEach(r => r.addEventListener("change", syncKind));
 syncKind();
@@ -368,6 +435,8 @@ ${exp || "(아직 적지 않음 — 직접 써 봐야 아는 부분은 모두 [�
 말투: ${$("tone").value}
 본문 길이: ${$("length").value}
 리뷰 종류: ${KINDS[kind()].label}
+${kind() === "trial" ? `체험단 글자수 규칙(반드시 지키기): 리뷰 전체(제목 줄, 별점 줄, 장점·단점, 끝 문구까지 모두 포함, 공백 포함)가 ${TRIAL_MIN}자 이상 ${TRIAL_MAX}자 이하여야 합니다. 본문 길이보다 이 규칙이 우선입니다.
+"===찍을 사진===" 섹션을 꼭 써 주세요(5~7개).` : ""}
 ${extra ? "추가 요청: " + extra : ""}
 ${$("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 넣어 주세요.` : ''}`;
 
@@ -419,7 +488,7 @@ ${$("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 �
 function startRun(){
   running = true; abortCtl = new AbortController();
   $("go").disabled = true; $("stopBtn").classList.remove("hidden");
-  ["resultCard","checkCard","srcCard","batchCard"].forEach(id => $(id).classList.add("hidden"));
+  ["resultCard","checkCard","srcCard","batchCard","photoCard"].forEach(id => $(id).classList.add("hidden"));
 }
 function endRun(){ running = false; abortCtl = null; $("go").disabled = false; $("stopBtn").classList.add("hidden"); }
 $("stopBtn").onclick = () => abortCtl?.abort();
@@ -471,8 +540,10 @@ async function runMany(){
       const r = await writeReview({ apiKey, product, exp, signal: abortCtl.signal,
         onStatus: m => { c.meta.textContent = m.replace(/^\S+\s/, ""); },
         onText: () => {} });
-      const { review, checks } = splitText(r.text);
-      c.body.innerHTML = fmt(review) + (checks ? '<h3>올리기 전에 확인할 점</h3>' + fmt(checks) : "");
+      const { review, checks, photos } = splitText(r.text);
+      c.body.innerHTML = fmt(review) + '<p class="count">' + countHtml(review, kind()) + '</p>'
+        + (photos && kind() === "trial" ? '<h3>찍어서 올릴 사진 (필수 · 7장 이내)</h3>' + fmt(photos) : "")
+        + (checks ? '<h3>올리기 전에 확인할 점</h3>' + fmt(checks) : "");
       c.meta.textContent = /\[직접 확인:/.test(review) ? "완성 · 빈칸 있음" : "완성";
       c.btns.classList.remove("hidden");
       c.cp.onclick = () => copyText(review);
@@ -495,8 +566,20 @@ $("again").onclick = runOne;
 const stripPics = (t) => t.replace(/[\p{Extended_Pictographic}★☆✩-✰️‍\u{1F3FB}-\u{1F3FF}]/gu, "").replace(/[ \t]+\n/g, "\n");
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function splitText(text){
-  const i = text.indexOf("===확인할 점===");
-  return i < 0 ? { review: text.trim(), checks: "" } : { review: text.slice(0,i).trim(), checks: text.slice(i + "===확인할 점===".length).trim() };
+  const P = "===찍을 사진===", C = "===확인할 점===";
+  const ip = text.indexOf(P), ic = text.indexOf(C);
+  const ends = [ip, ic].filter(i => i >= 0);
+  const review = (ends.length ? text.slice(0, Math.min(...ends)) : text).trim();
+  const part = (i, mark) => i < 0 ? "" : text.slice(i + mark.length, [ip, ic].filter(j => j > i).sort((a,b)=>a-b)[0] ?? text.length).trim();
+  return { review, photos: part(ip, P), checks: part(ic, C) };
+}
+const charCount = (t) => [...t].length;
+function countHtml(review, k){
+  const n = charCount(review);
+  if (k !== "trial") return `글자수 ${n.toLocaleString()}자 (공백 포함)`;
+  const ok = n >= TRIAL_MIN && n <= TRIAL_MAX;
+  const why = n < TRIAL_MIN ? ` · ${TRIAL_MIN - n}자 더 써야 해요` : n > TRIAL_MAX ? ` · ${n - TRIAL_MAX}자 줄이면 좋아요` : " · 기준 통과";
+  return `<span class="${ok ? "ok" : "no"}">글자수 ${n.toLocaleString()}자 (공백 포함) / 체험단 기준 ${TRIAL_MIN}~${TRIAL_MAX}자${why}</span>`;
 }
 function fmt(t){
   return escapeHtml(t)
@@ -508,10 +591,13 @@ function fmt(t){
 // 복사할 때는 화면용 꾸밈 없이 원래 글 그대로
 let currentReview = "";
 function render(text, streaming){
-  const { review, checks } = splitText(stripPics(text));
+  const { review, checks, photos } = splitText(stripPics(text));
   currentReview = review;
   $("resultCard").classList.remove("hidden");
   $("out").innerHTML = fmt(review);
+  $("countLine").innerHTML = countHtml(review, kind());
+  $("photoCard").classList.toggle("hidden", !photos || kind() !== "trial");
+  if (photos) $("photos").innerHTML = fmt(photos);
   $("fillNotice").classList.toggle("hidden", !/\[직접 확인:/.test(review));
   $("checkCard").classList.toggle("hidden", !checks);
   if (checks) $("checks").innerHTML = fmt(checks);
@@ -537,7 +623,10 @@ const HIST = "review-helper-history";
 function loadHist(){ try { return JSON.parse(store.get(HIST) || "[]"); } catch { return []; } }
 function saveHist(h){ store.set(HIST, JSON.stringify(h.slice(0, 50))); renderHist(); }
 function addHistory(product, text){
-  const h = loadHist(); h.unshift({ id: Date.now() + Math.random(), at: new Date().toISOString(), kind: kind(), product, text }); saveHist(h);
+  const h = loadHist();
+  h.unshift({ id: Date.now() + Math.random(), at: new Date().toISOString(), kind: kind(), product, text,
+              invite: kind() === "trial" ? $("inviteDate").value : "", done: false });
+  saveHist(h);
 }
 function renderHist(){
   const h = loadHist(); const list = $("histList"); list.innerHTML = "";
@@ -548,6 +637,12 @@ function renderHist(){
     const h4 = document.createElement("h4"); const t = document.createElement("span"); t.textContent = it.product;
     const meta = document.createElement("span"); meta.className = "meta";
     meta.textContent = `${it.kind === "own" ? "내돈내산" : "체험단"} · ${new Date(it.at).toLocaleDateString("ko-KR")}`;
+    if (it.kind === "trial" && it.invite){
+      const dl = document.createElement("span");
+      dl.textContent = it.done ? " · 올림 완료" : " · " + ddayText(deadlineOf(it.invite));
+      dl.className = it.done ? "ok" : (Math.round((deadlineOf(it.invite) - new Date().setHours(0,0,0,0)) / 86400000) <= 3 ? "no" : "");
+      meta.appendChild(dl);
+    }
     h4.append(t, meta);
     const det = document.createElement("details"); const sm = document.createElement("summary"); sm.textContent = "내용 보기";
     const body = document.createElement("div"); body.className = "out"; const { review } = splitText(it.text); body.innerHTML = fmt(review);
@@ -556,7 +651,13 @@ function renderHist(){
     const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사"; cp.onclick = () => copyText(review);
     const del = document.createElement("button"); del.className = "ghost small danger"; del.textContent = "삭제";
     del.onclick = () => saveHist(loadHist().filter(x => x.id !== it.id));
-    btns.append(cp, del); d.append(h4, det, btns); list.appendChild(d);
+    if (it.kind === "trial"){
+      const dn = document.createElement("button"); dn.className = "ghost small";
+      dn.textContent = it.done ? "↩ 완료 취소" : "✔ 쿠팡에 올렸어요";
+      dn.onclick = () => saveHist(loadHist().map(x => x.id === it.id ? { ...x, done: !x.done } : x));
+      btns.append(cp, dn, del);
+    } else btns.append(cp, del);
+    d.append(h4, det, btns); list.appendChild(d);
   }
 }
 $("histClear").onclick = () => { if (confirm("작성 기록을 모두 지울까요?")) saveHist([]); };
