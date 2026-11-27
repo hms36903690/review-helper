@@ -1,5 +1,5 @@
 // 앱 화면 파일만 저장해 두고, 새 버전이 있으면 받아 옵니다(네트워크 우선).
-const CACHE = "review-helper-v9";
+const CACHE = "review-helper-v10";
 const FILES = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
