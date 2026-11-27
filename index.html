@@ -195,7 +195,7 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
       </div>
     </div>
 
-    <label class="check"><input id="disclose" type="checkbox"> <span id="discloseText"></span></label>
+    <label class="check"><input id="disclose" type="checkbox" checked> <span id="discloseText"></span></label>
 
     <button class="primary" id="go">리뷰 만들기</button>
     <button class="ghost hidden" id="stopBtn" style="width:100%;margin-top:8px">멈추기</button>
@@ -334,14 +334,14 @@ const KINDS = {
 const kind = () => document.querySelector('input[name=kind]:checked').value;
 const KIND_KEY = "review-helper-kind";
 const LENGTHS = {
-  trial: [["250~400자", "짧게 (250~400자)"], ["450~650자", "보통 (450~650자)"], ["600~700자", "꽉 채워서 (600~700자)"]],
+  trial: [["450~650자", "보통 (450~650자)"], ["250~400자", "짧게 (250~400자)"], ["600~700자", "꽉 채워서 (600~700자)"]],
   own:   [["300~500자", "짧게 (300~500자)"], ["600~900자", "보통 (600~900자)"], ["1000~1500자", "자세히 (1000~1500자)"]],
 };
 const TRIAL_MIN = 200, TRIAL_MAX = 700;
 function syncKind(){
   const k = kind();
   $("discloseText").innerHTML = KINDS[k].check;
-  $("disclose").checked = store.get("review-helper-disclose-" + k) === "1";
+  $("disclose").checked = store.get("review-helper-disclose2-" + k) !== "0"; // 기본: 체크됨
   $("trialGuide").classList.toggle("hidden", k !== "trial");
   const sel = $("length"); sel.innerHTML = "";
   for (const [v, t] of LENGTHS[k]){ const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); }
@@ -370,7 +370,7 @@ function syncDeadline(){
   el.textContent = dl ? "→ " + ddayText(dl) : "초대받은 날을 넣으면 마감일을 알려 드려요";
   el.className = dl && Math.round((dl - new Date().setHours(0,0,0,0)) / 86400000) <= 3 ? "dday no" : "dday";
 }
-$("disclose").addEventListener("change", () => store.set("review-helper-disclose-" + kind(), $("disclose").checked ? "1" : "0"));
+$("disclose").addEventListener("change", () => store.set("review-helper-disclose2-" + kind(), $("disclose").checked ? "1" : "0"));
 $("inviteDate").value = store.get(INVITE_KEY);
 $("inviteDate").addEventListener("change", syncDeadline);
 syncDeadline();
