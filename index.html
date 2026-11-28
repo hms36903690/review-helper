@@ -232,9 +232,9 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
       <div>
         <label for="structure">글 구성</label>
         <select id="structure">
-          <option value="story">이야기형 (문단 + 장점·아쉬운 점 요약)</option>
-          <option value="heading">소제목형 (좋은 점마다 소제목)</option>
-          <option value="section">구간형 (구매 이유·사용 후기·총평)</option>
+          <option value="story">이야기형 (사용 후기를 이야기처럼 + 장점 요약)</option>
+          <option value="heading">소제목형 (사용 후기에 좋은 점마다 소제목)</option>
+          <option value="section">구간형 (네 칸을 짧고 깔끔하게)</option>
         </select>
       </div>
       <div>
@@ -351,27 +351,31 @@ const SYSTEM = `당신은 쿠팡 리뷰어(체험단 또는 직접 구매)를 �
 - 올리기 전에 사용자가 사실인지 확인하거나 채워야 할 것들 (스펙, 가격, 빈칸 등)
 - 쿠팡 리뷰 화면의 평가 항목(예: 색상, 사이즈, 디자인, 자극도 등) 중 이 상품에 나올 만한 것과, 메모 기준으로 고르면 좋을 답`;
 
+// 모든 구성에 반드시 들어가는 소제목 (이 순서)
+const REQUIRED_HEADS = ["구매 이유", "사용 후기", "아쉬운 점", "총평"];
+const HEAD_RULE = `소제목 규칙(반드시 지키기): 아래 4개 소제목이 이 순서로, 각각 그 줄에 "✔ 소제목" 형태로 꼭 들어가야 합니다. 글자를 바꾸지 마세요.
+✔ 구매 이유
+✔ 사용 후기
+✔ 아쉬운 점
+✔ 총평`;
 const STRUCTURES = {
-  story: `이야기형. 소제목 없이 문단으로: 구매 이유 → 받아 보고 첫인상 → 써 보니(사용 순서 포함) → 아쉬운 점 → 총평. 본문 뒤에 다음 형식의 요약을 붙입니다.
-장점
-- (명사형으로 짧게, 예: "작고 가벼워 휴대하기 편리함") 3~5개
-아쉬운 점
-- 2개 이상`,
-  heading: `소제목형. 첫 문단(구매 이유)을 쓴 뒤, 좋았던 점을 하나씩 "소제목 한 줄 + 설명 2~3문장"으로 3개 씁니다(소제목 예: "작고 휴대하기 좋은 사이즈"). 그다음 아래 순서로 씁니다.
-아쉬운 점
-- 2개 이상
-총평
-(2~3문장)`,
-  section: `구간형. 아래 소제목을 이 순서대로, 소제목은 그 줄에 글자만 씁니다.
-구매 이유
-(2~3문장)
-사용 후기
-(사용 순서와 느낀 점, 짧은 줄바꿈)
-아쉬운 점
-(1~2문장, 해결 팁이 있으면 함께)
-총평
-(누구에게 추천하는지)`,
+  story: `이야기형. ${HEAD_RULE}
+- ✔ 구매 이유: 2~3문장
+- ✔ 사용 후기: 첫인상 → 써 보니(사용 순서 포함)를 문단으로 이야기하듯. 그 끝에 "✔ 장점" 소제목을 넣고 명사형 짧은 목록 3~5개(예: "- 작고 가벼워 휴대하기 편리함")
+- ✔ 아쉬운 점: "- " 목록 2개 이상, 해결 팁이 있으면 함께
+- ✔ 총평: 누구에게 추천하는지 2~3문장`,
+  heading: `소제목형. ${HEAD_RULE}
+- ✔ 구매 이유: 2~3문장
+- ✔ 사용 후기: 좋았던 점을 하나씩 "✔ 짧은 소제목" + 설명 2~3문장으로 3개(소제목 예: "✔ 작고 휴대하기 좋은 사이즈")
+- ✔ 아쉬운 점: 2개 이상, 해결 팁이 있으면 함께
+- ✔ 총평: 2~3문장`,
+  section: `구간형. ${HEAD_RULE}
+- ✔ 구매 이유: 2~3문장
+- ✔ 사용 후기: 사용 순서와 느낀 점, 짧은 줄바꿈
+- ✔ 아쉬운 점: 1~2문장, 해결 팁이 있으면 함께
+- ✔ 총평: 누구에게 추천하는지`,
 };
+const missingHeads = (review) => REQUIRED_HEADS.filter(h => !new RegExp("^✔ ?" + h.replace(" ", " ?") + "\\s*$", "m").test(review));
 
 const KINDS = {
   trial: { label: "체험단 (제품을 제공받아 사용)", line: "※ 본 리뷰는 쿠팡 체험단으로 제품을 제공받아 직접 사용한 뒤 솔직하게 작성했습니다.",
@@ -687,7 +691,10 @@ async function runOne(){
     lastSources = r.sources; render(r.text, false);
     const title = (/^제목:\s*(.+)$/m.exec(r.text) || [])[1];
     addHistory(product || (title ? "(이미지) " + title.trim() : "이미지로 쓴 리뷰"), r.text);
-    status(r.cut ? "⚠️ 글이 길어 중간에 끊겼을 수 있어요." : "완성! 내용을 확인하고 다듬어서 올려 주세요.", r.cut);
+    const miss = missingHeads(splitText(r.text).review);
+    if (r.cut) status("⚠️ 글이 길어 중간에 끊겼을 수 있어요.", true);
+    else if (miss.length) status(`⚠️ 빠진 소제목이 있어요: ${miss.join(", ")} — 다시 쓰기를 누르거나 직접 넣어 주세요.`, true);
+    else status("완성! 구매 이유·사용 후기·아쉬운 점·총평이 모두 들어갔어요. 확인하고 다듬어서 올려 주세요.");
   } catch (e){ console.error(e); status("❌ " + errMsg(e), true); }
   finally { endRun(); }
 }
@@ -725,7 +732,8 @@ async function runMany(){
       c.body.innerHTML = fmt(review) + '<p class="count">' + countHtml(review, kind()) + '</p>'
         + (photos && kind() === "trial" ? '<h3>찍어서 올릴 사진 (필수 · 7장 이내)</h3>' + fmt(photos) : "")
         + (checks ? '<h3>올리기 전에 확인할 점</h3>' + fmt(checks) : "");
-      c.meta.textContent = /\[직접 확인:/.test(review) ? "완성 · 빈칸 있음" : "완성";
+      const miss = missingHeads(review);
+      c.meta.textContent = (miss.length ? "완성 · 빠진 소제목: " + miss.join(", ") : "완성") + (/\[직접 확인:/.test(review) ? " · 빈칸 있음" : "");
       c.btns.classList.remove("hidden");
       c.cp.onclick = () => copyText(review);
       addHistory(product, r.text); done++;
