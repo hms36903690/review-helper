@@ -83,6 +83,14 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .dday{font-weight:700}
 .ok{color:var(--good)} .no{color:var(--bad)}
 .count{font-size:14px;margin:10px 0 0;font-weight:600}
+.prow{display:flex;gap:8px;align-items:stretch}
+.prow input{flex:1;min-width:0}
+.pimg{flex:0 0 76px;height:76px;margin:0;border:2px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;font-size:22px;text-align:center;font-weight:400}
+.pimg small{display:block;font-size:11px;color:var(--muted)}
+.pimg.over{border-color:var(--accent);background:var(--accent-2)}
+.pimg.has{border-style:solid}
+.pimg img{width:100%;height:100%;object-fit:cover}
+#pimgDel{align-self:flex-start;padding:4px 9px}
 .drop{display:block;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:16px 10px;cursor:pointer;color:var(--muted);font-weight:600;font-size:14.5px;margin:0}
 .drop.over{border-color:var(--accent);color:var(--accent);background:var(--accent-2)}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px;margin-top:8px}
@@ -148,12 +156,20 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
     </div>
 
     <div id="oneBox">
-    <label for="product">상품명 <span class="hint">(쿠팡 상품명 그대로 붙여넣어도 돼요)</span></label>
-    <input id="product" type="text" placeholder="예: 쿠쿠 6인용 IH 전기압력밥솥 CRP-...">
+    <label for="product">상품명 · 상품 이미지 <span class="hint">(둘 중 하나만 넣어도 돼요. 쿠팡 상품 사진이나 상품 화면 캡처를 넣으면 거기서 상품을 알아내요)</span></label>
+    <div class="prow">
+      <input id="product" type="text" placeholder="예: 쿠쿠 6인용 IH 전기압력밥솥 CRP-...">
+      <label class="pimg" id="pimg" for="pimgInput" title="상품 이미지 넣기 (눌러서 고르기 · 끌어다 놓기 · 상품명 칸에서 Ctrl+V)">
+        <span id="pimgEmpty">🖼️<small>상품 이미지</small></span>
+        <img id="pimgPreview" alt="상품 이미지" class="hidden">
+      </label>
+      <button class="ghost small hidden" id="pimgDel" aria-label="상품 이미지 빼기">×</button>
+    </div>
+    <input type="file" id="pimgInput" accept="image/*" hidden>
 
     <label for="experience">내가 직접 써 보고 느낀 점 <span class="hint">(짧게 메모만 해도 됩니다. 내 경험이 많이 담길수록 도움이 되는 리뷰가 됩니다)</span></label>
     <textarea id="experience" placeholder="예: 2주 사용. 4인 가족. 밥맛 확실히 차지고 좋음. 취사 30분 정도. 소음 거의 없음. 내솥 무거워서 씻기 좀 불편. 이전엔 10년 된 밥솥 썼음."></textarea>
-    <label>사진 <span class="hint">(선택 · 최대 7장. 내가 찍은 상품 사진이나 쿠팡 상품 화면 캡처. 사진만 넣으면 상품명은 비워도 돼요)</span></label>
+    <label>내가 찍은 사진 <span class="hint">(선택 · 최대 7장. 받아서 직접 찍은 사진을 넣으면 보이는 색상·구성품·크기를 리뷰에 넣어요)</span></label>
     <label class="drop" id="drop" for="photoInput">📷 사진 추가 — 눌러서 고르기 · 끌어다 놓기 · Ctrl+V 붙여넣기</label>
     <input type="file" id="photoInput" accept="image/*" multiple hidden>
     <div id="thumbs" class="thumbs"></div>
@@ -486,18 +502,46 @@ document.addEventListener("paste", e => {
   const files = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith("image/"));
   if (files.length){ e.preventDefault(); addPhotos(files); }
 });
-const imageBlocks = () => photos.map(p => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: p.data } }));
-const PHOTO_NOTE = (n) => `첨부한 사진 ${n}장은 내가 직접 찍은 상품 사진이거나 쿠팡 상품 화면 캡처입니다.
-- 상품 화면 캡처라면 거기서 정확한 상품명·옵션·스펙을 읽어 조사에 씁니다(화면 속 다른 사람 후기 문장은 리뷰에 넣지 않습니다).
-- 내가 찍은 사진이라면 사진에서 실제로 보이는 것(색상, 구성품, 포장 상태, 크기 비교, 사용 모습, 비포·애프터)은 내가 직접 본 것으로 리뷰에 자연스럽게 씁니다. 예: "실물은 연보라색이라 화장대에 두기 예뻐요"
-- 사진만으로는 알 수 없는 체감(효과, 편한지, 소음 등)은 메모에 없으면 지어내지 말고 빈칸으로 남깁니다.
-- 내가 찍은 사진이 있으면 "===찍을 사진===" 섹션에는 이미 찍은 구도는 빼고 더 찍으면 좋을 구도만 적습니다.`;
+// 상품 이미지 (1장): 상품을 알아내는 용도
+let productImg = null;
+async function setProductImg(file){
+  if (!file || !file.type.startsWith("image/")) return;
+  try { productImg = await toJpeg(file); } catch { status("이 이미지는 열 수 없었어요. JPG나 PNG로 다시 넣어 주세요.", true); return; }
+  renderProductImg(); status("상품 이미지가 들어갔어요. 상품명은 비워 둬도 돼요.");
+}
+function renderProductImg(){
+  const has = !!productImg;
+  $("pimgPreview").classList.toggle("hidden", !has); $("pimgEmpty").classList.toggle("hidden", has);
+  $("pimg").classList.toggle("has", has); $("pimgDel").classList.toggle("hidden", !has);
+  if (has) $("pimgPreview").src = productImg.url; else $("pimgPreview").removeAttribute("src");
+}
+$("pimgInput").addEventListener("change", e => { setProductImg(e.target.files[0]); e.target.value = ""; });
+$("pimgDel").onclick = () => { productImg = null; renderProductImg(); };
+{ const z = $("pimg");
+  z.addEventListener("dragover", e => { e.preventDefault(); z.classList.add("over"); });
+  z.addEventListener("dragleave", () => z.classList.remove("over"));
+  z.addEventListener("drop", e => { e.preventDefault(); z.classList.remove("over"); setProductImg(e.dataTransfer.files[0]); }); }
+$("product").addEventListener("paste", e => {
+  const f = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
+  if (f){ e.preventDefault(); e.stopPropagation(); setProductImg(f); }
+});
+
+const img = (p) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: p.data } });
+const hasImages = () => !!productImg || photos.length > 0;
+function imageBlocks(){
+  const out = [];
+  if (productImg) out.push({ type: "text", text: "[상품 이미지 — 쿠팡 상품 사진 또는 상품 화면 캡처]" }, img(productImg));
+  if (photos.length) out.push({ type: "text", text: `[내가 직접 찍은 사진 ${photos.length}장]` }, ...photos.map(img));
+  return out;
+}
+const PHOTO_NOTE = () => `${productImg ? `[상품 이미지]는 쿠팡 상품 사진이거나 상품 화면 캡처입니다. 거기서 정확한 상품명·브랜드·옵션·스펙을 읽어 조사에 씁니다(화면 속 다른 사람 후기 문장은 리뷰에 넣지 않습니다). 이 이미지는 판매자 사진이므로 "내가 찍은 사진"처럼 쓰지 않습니다.\n` : ""}${photos.length ? `[내가 직접 찍은 사진] ${photos.length}장에서 실제로 보이는 것(색상, 구성품, 포장 상태, 크기 비교, 사용 모습, 비포·애프터)은 내가 직접 본 것으로 리뷰에 자연스럽게 씁니다. 예: "실물은 연보라색이라 화장대에 두기 예뻐요"\n- 내가 찍은 사진이 있으면 "===찍을 사진===" 섹션에는 이미 찍은 구도는 빼고 더 찍으면 좋을 구도만 적습니다.\n` : ""}- 사진만으로는 알 수 없는 체감(효과, 편한지, 소음 등)은 메모에 없으면 지어내지 말고 빈칸으로 남깁니다.`;
+
 
 // ---------- AI 질문 ----------
 $("askBtn").onclick = async () => {
   const apiKey = getKey(); if (!apiKey) return;
   const product = $("product").value.trim();
-  if (!product && !photos.length){ status("상품명이나 사진을 먼저 넣어 주세요.", true); $("product").focus(); return; }
+  if (!product && !hasImages()){ status("상품명이나 상품 이미지를 먼저 넣어 주세요.", true); $("product").focus(); return; }
   if (running) return;
   running = true; $("askBtn").disabled = true;
   status("🙋 무엇을 물어볼지 생각하고 있어요…");
@@ -509,7 +553,7 @@ $("askBtn").onclick = async () => {
         type: "object", additionalProperties: false, required: ["questions"],
         properties: { questions: { type: "array", items: { type: "string" } } } } } },
       messages: [{ role: "user", content: [...imageBlocks(), { type: "text", text:
-`${photos.length ? "첨부한 사진은 이 사람이 찍은 상품 사진이나 상품 화면 캡처입니다. 사진에서 이미 보이는 것은 묻지 마세요.\n" : ""}쿠팡 리뷰를 쓰려는 사람에게, 직접 써 본 사람만 답할 수 있는 짧은 질문 5~6개를 만들어 주세요.
+`${hasImages() ? "첨부한 이미지로 상품을 파악하고, 내가 찍은 사진에서 이미 보이는 것은 묻지 마세요.\n" : ""}쿠팡 리뷰를 쓰려는 사람에게, 직접 써 본 사람만 답할 수 있는 짧은 질문 5~6개를 만들어 주세요.
 좋은 리뷰에 꼭 들어가는 것 위주로 물어보세요: 왜 샀는지(어떤 불편이 있었는지), 옵션(색상·사이즈)을 고민했는지, 실제로 어떻게 쓰는지, 크기·효과 같은 체감, 아쉬웠던 점, 사진을 어떻게 찍었는지(비포·애프터 등), 재구매 의사. 이미 메모에 있는 내용은 묻지 마세요.
 질문은 한 문장, 쉬운 말로. 이모지는 쓰지 마세요.
 상품명: ${product || "(사진 참고)"}
@@ -539,8 +583,8 @@ function answersText(){
 // ---------- 리뷰 한 개 생성 (공통) ----------
 async function writeReview({ apiKey, product, exp, onText, onStatus, signal, images = [] }){
   const extra = $("extra").value.trim();
-  const userMsg = `상품명: ${product || "(비어 있음 — 첨부한 사진에서 상품명을 알아내 조사해 주세요)"}
-${images.length ? "\n" + PHOTO_NOTE(images.length) + "\n" : ""}
+  const userMsg = `상품명: ${product || "(비어 있음 — 첨부한 상품 이미지나 사진에서 상품명을 알아내 조사해 주세요)"}
+${images.length ? "\n" + PHOTO_NOTE() + "\n" : ""}
 내 사용 경험:
 ${exp || "(아직 적지 않음 — 직접 써 봐야 아는 부분은 모두 [직접 확인: …] 빈칸으로 남겨 주세요)"}
 
@@ -610,7 +654,7 @@ $("stopBtn").onclick = () => abortCtl?.abort();
 async function runOne(){
   const apiKey = getKey(); if (!apiKey) return;
   const product = $("product").value.trim();
-  if (!product && !photos.length){ status("상품명을 넣거나 사진을 넣어 주세요.", true); $("product").focus(); return; }
+  if (!product && !hasImages()){ status("상품명을 넣거나 상품 이미지를 넣어 주세요.", true); $("product").focus(); return; }
   if (running) return;
   startRun(); $("out").textContent = ""; lastSources = [];
   const ans = answersText();
@@ -620,7 +664,7 @@ async function runOne(){
     const r = await writeReview({ apiKey, product, exp, images: imageBlocks(), signal: abortCtl.signal, onStatus: status, onText: t => render(t, true) });
     lastSources = r.sources; render(r.text, false);
     const title = (/^제목:\s*(.+)$/m.exec(r.text) || [])[1];
-    addHistory(product || (title ? "(사진) " + title.trim() : "사진으로 쓴 리뷰"), r.text);
+    addHistory(product || (title ? "(이미지) " + title.trim() : "이미지로 쓴 리뷰"), r.text);
     status(r.cut ? "⚠️ 글이 길어 중간에 끊겼을 수 있어요." : "완성! 내용을 확인하고 다듬어서 올려 주세요.", r.cut);
   } catch (e){ console.error(e); status("❌ " + errMsg(e), true); }
   finally { endRun(); }
