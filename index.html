@@ -83,6 +83,8 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .dday{font-weight:700}
 .ok{color:var(--good)} .no{color:var(--bad)}
 .count{font-size:14px;margin:10px 0 0;font-weight:600}
+#syncState.ok{color:var(--good);font-size:14px}
+#syncState.err{color:var(--bad);font-size:14px}
 .prow{display:flex;gap:8px;align-items:stretch}
 .prow input{flex:1;min-width:0}
 .pimg{flex:0 0 76px;height:76px;margin:0;border:2px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;font-size:22px;text-align:center;font-weight:400}
@@ -126,6 +128,26 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
       <p class="hint">console.anthropic.com 에서 발급받은 키를 넣으세요. 이 기기 브라우저에만 저장되고, Anthropic 외에는 어디로도 보내지 않습니다. 사용한 만큼 요금이 나옵니다(리뷰 1개에 대략 몇백 원).</p>
       <input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
       <div class="btns"><button class="ghost" id="saveKey">저장</button><button class="ghost" id="clearKey">지우기</button></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details id="syncBox">
+      <summary>☁️ PC·휴대폰 연동</summary>
+      <p id="syncState" class="hint"></p>
+      <div class="btns">
+        <button class="ghost" id="loginBtn">구글 계정으로 로그인</button>
+        <button class="ghost hidden" id="logoutBtn">로그아웃</button>
+      </div>
+      <details style="margin-top:10px">
+        <summary class="hint">처음 한 번: Firebase 규칙 추가하기</summary>
+        <ol class="hint" style="padding-left:18px">
+          <li>console.firebase.google.com → <b>hms-fc</b> 프로젝트 → <b>Firestore Database</b> → <b>규칙</b> 탭</li>
+          <li>아래 버튼으로 규칙 글을 복사해서, 맨 아래쪽 <b>}</b> 두 개 바로 위(다른 match 블록들 옆)에 붙여넣기</li>
+          <li><b>게시</b> 누르기</li>
+        </ol>
+        <button class="ghost small" id="copyRules">📋 규칙 글 복사</button>
+      </details>
     </details>
   </div>
 
@@ -778,16 +800,33 @@ async function copyText(t){
 }
 $("copy").onclick = () => copyText(currentReview);
 
-// ---------- 작성 기록 ----------
+// ---------- 작성 기록 (이 기기 + 로그인하면 PC·휴대폰 연동) ----------
 const HIST = "review-helper-history";
-function loadHist(){ try { return JSON.parse(store.get(HIST) || "[]"); } catch { return []; } }
-function saveHist(h){ store.set(HIST, JSON.stringify(h.slice(0, 50))); renderHist(); }
-function addHistory(product, text){
-  const h = loadHist();
-  h.unshift({ id: Date.now() + Math.random(), at: new Date().toISOString(), kind: kind(), product, text,
-              invite: kind() === "trial" ? $("inviteDate").value : "", done: false });
-  saveHist(h);
+let cloudItems = null; // 로그인해서 받아 온 기록 (null이면 이 기기 기록만 씀)
+const docId = (id) => String(id).replace(/[^\w-]/g, "_");
+function localHist(){ try { return JSON.parse(store.get(HIST) || "[]"); } catch { return []; } }
+function setLocal(h){ store.set(HIST, JSON.stringify(h.slice(0, 200))); }
+function loadHist(){ return cloudItems ?? localHist(); }
+
+function histAdd(item){
+  setLocal([item, ...localHist()]);
+  if (SYNC.user) cloudSet(item); else renderHist();
 }
+function histUpdate(id, patch){
+  if ("text" in patch) patch = { ...patch, edited: Date.now() };
+  setLocal(localHist().map(x => x.id === id ? { ...x, ...patch } : x));
+  if (SYNC.user){ const it = loadHist().find(x => x.id === id); if (it) cloudSet({ ...it, ...patch, edited: Date.now() }); }
+  else renderHist();
+}
+function histDelete(id){
+  setLocal(localHist().filter(x => x.id !== id));
+  if (SYNC.user) cloudDel(id); else renderHist();
+}
+function addHistory(product, text){
+  histAdd({ id: docId(Date.now() + "_" + Math.random().toString(36).slice(2, 8)), at: new Date().toISOString(), kind: kind(), product, text,
+            invite: kind() === "trial" ? $("inviteDate").value : "", done: false });
+}
+
 function renderHist(){
   const h = loadHist(); const list = $("histList"); list.innerHTML = "";
   $("histCount").textContent = h.length ? `(${h.length}개)` : "";
@@ -796,7 +835,7 @@ function renderHist(){
     const d = document.createElement("div"); d.className = "item";
     const h4 = document.createElement("h4"); const t = document.createElement("span"); t.textContent = it.product;
     const meta = document.createElement("span"); meta.className = "meta";
-    meta.textContent = `${it.kind === "own" ? "내돈내산" : "체험단"} · ${new Date(it.at).toLocaleDateString("ko-KR")}`;
+    meta.textContent = `${it.kind === "own" ? "내돈내산" : "체험단"} · ${new Date(it.at).toLocaleDateString("ko-KR")}${it.edited ? " · 수정함" : ""}`;
     if (it.kind === "trial" && it.invite){
       const dl = document.createElement("span");
       dl.textContent = it.done ? " · 올림 완료" : " · " + ddayText(deadlineOf(it.invite));
@@ -805,23 +844,144 @@ function renderHist(){
     }
     h4.append(t, meta);
     const det = document.createElement("details"); const sm = document.createElement("summary"); sm.textContent = "내용 보기";
-    const body = document.createElement("div"); body.className = "out"; const { review } = splitText(it.text); body.innerHTML = fmt(review);
-    det.append(sm, body);
+    const { review } = splitText(it.text);
+    const body = document.createElement("div"); body.className = "out"; body.innerHTML = fmt(review);
+    const cnt = document.createElement("p"); cnt.className = "count"; cnt.innerHTML = countHtml(review, it.kind);
+    det.append(sm, body, cnt);
     const btns = document.createElement("div"); btns.className = "btns";
     const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사"; cp.onclick = () => copyText(review);
+    const ed = document.createElement("button"); ed.className = "ghost small"; ed.textContent = "✏️ 수정";
+    ed.onclick = () => openEditor(it, d);
     const del = document.createElement("button"); del.className = "ghost small danger"; del.textContent = "삭제";
-    del.onclick = () => saveHist(loadHist().filter(x => x.id !== it.id));
+    del.onclick = () => { if (confirm("이 기록을 지울까요?")) histDelete(it.id); };
+    const row = [cp, ed];
     if (it.kind === "trial"){
       const dn = document.createElement("button"); dn.className = "ghost small";
       dn.textContent = it.done ? "↩ 완료 취소" : "✔ 쿠팡에 올렸어요";
-      dn.onclick = () => saveHist(loadHist().map(x => x.id === it.id ? { ...x, done: !x.done } : x));
-      btns.append(cp, dn, del);
-    } else btns.append(cp, del);
+      dn.onclick = () => histUpdate(it.id, { done: !it.done });
+      row.push(dn);
+    }
+    btns.append(...row, del);
     d.append(h4, det, btns); list.appendChild(d);
   }
 }
-$("histClear").onclick = () => { if (confirm("작성 기록을 모두 지울까요?")) saveHist([]); };
-renderHist();
+function openEditor(it, box){
+  const { review, photos, checks } = splitText(it.text);
+  const rest = (photos ? "\n\n===찍을 사진===\n" + photos : "") + (checks ? "\n\n===확인할 점===\n" + checks : "");
+  box.innerHTML = "";
+  const h4 = document.createElement("h4"); h4.textContent = it.product;
+  const ta = document.createElement("textarea"); ta.value = review; ta.style.minHeight = "320px";
+  const cnt = document.createElement("p"); cnt.className = "count";
+  const upd = () => { cnt.innerHTML = countHtml(ta.value.trim(), it.kind); };
+  ta.addEventListener("input", upd); upd();
+  const btns = document.createElement("div"); btns.className = "btns";
+  const sv = document.createElement("button"); sv.className = "ghost small"; sv.textContent = "💾 저장";
+  sv.onclick = () => { histUpdate(it.id, { text: ta.value.trim() + rest }); status(SYNC.user ? "수정한 리뷰를 저장했어요. 다른 기기에도 바로 반영돼요." : "수정한 리뷰를 저장했어요."); };
+  const cc = document.createElement("button"); cc.className = "ghost small"; cc.textContent = "취소"; cc.onclick = renderHist;
+  const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사"; cp.onclick = () => copyText(ta.value.trim());
+  btns.append(sv, cp, cc);
+  box.append(h4, ta, cnt, btns);
+  ta.focus();
+}
+$("histClear").onclick = () => {
+  if (!confirm(SYNC.user ? "작성 기록을 모두 지울까요? 연동된 다른 기기에서도 지워져요." : "작성 기록을 모두 지울까요?")) return;
+  const ids = loadHist().map(x => x.id); setLocal([]);
+  if (SYNC.user) ids.forEach(cloudDel); else renderHist();
+};
+
+// ---------- PC·휴대폰 연동 (구글 로그인 + Firebase) ----------
+const FB_CONFIG = {
+  apiKey: "AIzaSyCfbZHECgnxRg6aFDN53cXaeeWY0bah8uo",
+  authDomain: "hms-fc.firebaseapp.com",
+  projectId: "hms-fc",
+  storageBucket: "hms-fc.firebasestorage.app",
+  messagingSenderId: "581548176642",
+  appId: "1:581548176642:web:e2dd976781a9cfd6f17e1b",
+};
+const FBV = "10.12.2";
+const SYNC = { user: null, fb: null, unsub: null, err: "" };
+async function fb(){
+  if (SYNC.fb) return SYNC.fb;
+  const [app, auth, fs] = await Promise.all([
+    import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-app.js`),
+    import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-auth.js`),
+    import(`https://www.gstatic.com/firebasejs/${FBV}/firebase-firestore.js`),
+  ]);
+  const a = app.initializeApp(FB_CONFIG, "review-helper");
+  SYNC.fb = { auth, fs, A: auth.getAuth(a), D: fs.getFirestore(a) };
+  return SYNC.fb;
+}
+const itemsCol = () => SYNC.fb.fs.collection(SYNC.fb.D, "reviewhelper", SYNC.user.uid, "items");
+function syncErr(e){
+  console.error(e);
+  const m = (e?.code || "") + " " + (e?.message || "");
+  if (/popup-closed|cancelled-popup/i.test(m)) return; // 로그인 창을 그냥 닫은 경우
+  SYNC.err = /unauthorized-domain/i.test(m)
+    ? "이 주소(hms36903690.github.io)가 Firebase 로그인 허용 목록에 없어요. Firebase → Authentication → 설정 → 승인된 도메인에 추가해 주세요."
+    : /permission|insufficient/i.test(m)
+    ? "연동 권한이 아직 없어요. 아래 '처음 한 번: Firebase 규칙 추가하기'를 해 주세요."
+    : "연동 중 문제가 생겼어요: " + (e?.message || e);
+  renderSync();
+}
+async function cloudSet(item){ try { await SYNC.fb.fs.setDoc(SYNC.fb.fs.doc(itemsCol(), docId(item.id)), item); } catch (e){ syncErr(e); } }
+async function cloudDel(id){ try { await SYNC.fb.fs.deleteDoc(SYNC.fb.fs.doc(itemsCol(), docId(id))); } catch (e){ syncErr(e); } }
+
+function renderSync(){
+  const on = !!SYNC.user;
+  $("syncState").textContent = SYNC.err ? "⚠️ " + SYNC.err
+    : on ? `✅ 연동 중 · ${SYNC.user.email || "구글 계정"} · 작성 기록이 PC와 휴대폰에 함께 저장돼요`
+    : "로그인하지 않으면 작성 기록이 이 기기에만 저장돼요. PC와 휴대폰에서 같은 구글 계정으로 로그인하면 기록이 연동돼요.";
+  $("syncState").className = SYNC.err ? "err" : on ? "ok" : "hint";
+  $("loginBtn").classList.toggle("hidden", on);
+  $("logoutBtn").classList.toggle("hidden", !on);
+}
+async function startSync(user){
+  SYNC.user = user; SYNC.err = ""; renderSync();
+  const { fs } = SYNC.fb;
+  // 처음 연동할 때 이 기기에만 있던 기록을 올림
+  try {
+    const snap = await fs.getDocs(itemsCol());
+    const have = new Set(snap.docs.map(d => d.id));
+    const mine = localHist().filter(x => !have.has(docId(x.id)));
+    for (const it of mine) await fs.setDoc(fs.doc(itemsCol(), docId(it.id)), { ...it, id: docId(it.id) });
+  } catch (e){ syncErr(e); return; }
+  SYNC.unsub?.();
+  SYNC.unsub = fs.onSnapshot(fs.query(itemsCol(), fs.orderBy("at", "desc"), fs.limit(200)), (snap) => {
+    cloudItems = snap.docs.map(d => d.data());
+    setLocal(cloudItems); // 다음에 열 때 바로 보이도록 이 기기에도 저장
+    SYNC.err = ""; renderSync(); renderHist();
+  }, syncErr);
+}
+function stopSync(){ SYNC.unsub?.(); SYNC.unsub = null; SYNC.user = null; cloudItems = null; renderSync(); renderHist(); }
+
+$("loginBtn").onclick = async () => {
+  try {
+    const { auth, A } = await fb();
+    const p = new auth.GoogleAuthProvider();
+    store.set("review-helper-synced", "1"); watchAuth();
+    try { await auth.signInWithPopup(A, p); }
+    catch (e){ if (/popup/i.test(e?.code || "")) await auth.signInWithRedirect(A, p); else throw e; }
+  } catch (e){ syncErr(e); }
+};
+$("logoutBtn").onclick = async () => { try { await SYNC.fb.auth.signOut(SYNC.fb.A); } catch (e){ syncErr(e); } };
+$("copyRules").onclick = () => copyText(RULES_ADD).then(() => status("📋 규칙 글을 복사했어요. Firebase 규칙 칸에 붙여넣고 [게시]를 누르세요."));
+const RULES_ADD = `    // 쿠팡 리뷰 도우미: 로그인한 본인만 자기 작성 기록을 읽고 쓸 수 있습니다.
+    match /reviewhelper/{uid}/items/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }`;
+
+renderHist(); renderSync();
+$("syncBox").addEventListener("toggle", () => { if ($("syncBox").open) fb().catch(() => {}); }); // 로그인 창이 막히지 않게 미리 불러 둠
+// 예전에 로그인했으면 자동으로 연동 시작
+let watching = false;
+function watchAuth(){
+  if (watching) return; watching = true;
+  fb().then(({ auth, A }) => auth.onAuthStateChanged(A, u => {
+    if (u){ store.set("review-helper-synced", "1"); if (SYNC.user?.uid !== u.uid) startSync(u); }
+    else if (SYNC.user || store.get("review-helper-synced") === "1"){ store.del("review-helper-synced"); stopSync(); }
+  })).catch(e => { watching = false; syncErr(e); });
+}
+if (store.get("review-helper-synced") === "1") watchAuth();
 
 // 앱 설치(바탕화면·홈 화면)
 if ("serviceWorker" in navigator && isSecureContext && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
