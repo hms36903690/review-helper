@@ -83,6 +83,12 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .dday{font-weight:700}
 .ok{color:var(--good)} .no{color:var(--bad)}
 .count{font-size:14px;margin:10px 0 0;font-weight:600}
+.drop{display:block;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:16px 10px;cursor:pointer;color:var(--muted);font-weight:600;font-size:14.5px;margin:0}
+.drop.over{border-color:var(--accent);color:var(--accent);background:var(--accent-2)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:8px;margin-top:8px}
+.thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb button{position:absolute;top:3px;right:3px;width:24px;height:24px;padding:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:24px}
 .out b.hd{display:inline-block;margin-top:6px;color:var(--accent)}
 .danger{color:var(--bad)}
 </style>
@@ -147,6 +153,10 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 
     <label for="experience">내가 직접 써 보고 느낀 점 <span class="hint">(짧게 메모만 해도 됩니다. 내 경험이 많이 담길수록 도움이 되는 리뷰가 됩니다)</span></label>
     <textarea id="experience" placeholder="예: 2주 사용. 4인 가족. 밥맛 확실히 차지고 좋음. 취사 30분 정도. 소음 거의 없음. 내솥 무거워서 씻기 좀 불편. 이전엔 10년 된 밥솥 썼음."></textarea>
+    <label>사진 <span class="hint">(선택 · 최대 7장. 내가 찍은 상품 사진이나 쿠팡 상품 화면 캡처. 사진만 넣으면 상품명은 비워도 돼요)</span></label>
+    <label class="drop" id="drop" for="photoInput">📷 사진 추가 — 눌러서 고르기 · 끌어다 놓기 · Ctrl+V 붙여넣기</label>
+    <input type="file" id="photoInput" accept="image/*" multiple hidden>
+    <div id="thumbs" class="thumbs"></div>
     <div class="btns"><button class="ghost" id="askBtn">🙋 무엇을 적을지 AI가 물어봐 주기</button></div>
     <div id="qBox" class="q hidden"></div>
     </div>
@@ -431,11 +441,63 @@ function errMsg(e){
   return m;
 }
 
+// ---------- 사진 ----------
+const MAX_PHOTOS = 7;
+let photos = []; // {url, data}
+async function toJpeg(file){
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1568 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+  const url = cv.toDataURL("image/jpeg", 0.85);
+  return { url, data: url.slice(url.indexOf(",") + 1) };
+}
+async function addPhotos(files){
+  const imgs = [...files].filter(f => f.type.startsWith("image/"));
+  if (!imgs.length) return;
+  let skipped = 0, failed = 0;
+  for (const f of imgs){
+    if (photos.length >= MAX_PHOTOS){ skipped++; continue; }
+    try { photos.push(await toJpeg(f)); } catch { failed++; }
+  }
+  renderThumbs();
+  if (failed) status(`사진 ${failed}장은 열 수 없었어요. JPG나 PNG로 다시 넣어 주세요.`, true);
+  else if (skipped) status(`사진은 ${MAX_PHOTOS}장까지만 넣을 수 있어요.`, true);
+  else status(`사진 ${photos.length}장이 들어갔어요.`);
+}
+function renderThumbs(){
+  const box = $("thumbs"); box.innerHTML = "";
+  photos.forEach((p, i) => {
+    const d = document.createElement("div"); d.className = "thumb";
+    const img = document.createElement("img"); img.src = p.url; img.alt = `사진 ${i+1}`;
+    const x = document.createElement("button"); x.textContent = "×"; x.title = "빼기"; x.setAttribute("aria-label", `사진 ${i+1} 빼기`);
+    x.onclick = () => { photos.splice(i, 1); renderThumbs(); };
+    d.append(img, x); box.appendChild(d);
+  });
+}
+$("photoInput").addEventListener("change", e => { addPhotos(e.target.files); e.target.value = ""; });
+const drop = $("drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); addPhotos(e.dataTransfer.files); });
+document.addEventListener("paste", e => {
+  if (mode !== "one") return;
+  const files = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith("image/"));
+  if (files.length){ e.preventDefault(); addPhotos(files); }
+});
+const imageBlocks = () => photos.map(p => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: p.data } }));
+const PHOTO_NOTE = (n) => `첨부한 사진 ${n}장은 내가 직접 찍은 상품 사진이거나 쿠팡 상품 화면 캡처입니다.
+- 상품 화면 캡처라면 거기서 정확한 상품명·옵션·스펙을 읽어 조사에 씁니다(화면 속 다른 사람 후기 문장은 리뷰에 넣지 않습니다).
+- 내가 찍은 사진이라면 사진에서 실제로 보이는 것(색상, 구성품, 포장 상태, 크기 비교, 사용 모습, 비포·애프터)은 내가 직접 본 것으로 리뷰에 자연스럽게 씁니다. 예: "실물은 연보라색이라 화장대에 두기 예뻐요"
+- 사진만으로는 알 수 없는 체감(효과, 편한지, 소음 등)은 메모에 없으면 지어내지 말고 빈칸으로 남깁니다.
+- 내가 찍은 사진이 있으면 "===찍을 사진===" 섹션에는 이미 찍은 구도는 빼고 더 찍으면 좋을 구도만 적습니다.`;
+
 // ---------- AI 질문 ----------
 $("askBtn").onclick = async () => {
   const apiKey = getKey(); if (!apiKey) return;
   const product = $("product").value.trim();
-  if (!product){ status("상품명을 먼저 넣어 주세요.", true); $("product").focus(); return; }
+  if (!product && !photos.length){ status("상품명이나 사진을 먼저 넣어 주세요.", true); $("product").focus(); return; }
   if (running) return;
   running = true; $("askBtn").disabled = true;
   status("🙋 무엇을 물어볼지 생각하고 있어요…");
@@ -446,12 +508,12 @@ $("askBtn").onclick = async () => {
       output_config: { effort: "low", format: { type: "json_schema", schema: {
         type: "object", additionalProperties: false, required: ["questions"],
         properties: { questions: { type: "array", items: { type: "string" } } } } } },
-      messages: [{ role: "user", content:
-`쿠팡 리뷰를 쓰려는 사람에게, 직접 써 본 사람만 답할 수 있는 짧은 질문 5~6개를 만들어 주세요.
+      messages: [{ role: "user", content: [...imageBlocks(), { type: "text", text:
+`${photos.length ? "첨부한 사진은 이 사람이 찍은 상품 사진이나 상품 화면 캡처입니다. 사진에서 이미 보이는 것은 묻지 마세요.\n" : ""}쿠팡 리뷰를 쓰려는 사람에게, 직접 써 본 사람만 답할 수 있는 짧은 질문 5~6개를 만들어 주세요.
 좋은 리뷰에 꼭 들어가는 것 위주로 물어보세요: 왜 샀는지(어떤 불편이 있었는지), 옵션(색상·사이즈)을 고민했는지, 실제로 어떻게 쓰는지, 크기·효과 같은 체감, 아쉬웠던 점, 사진을 어떻게 찍었는지(비포·애프터 등), 재구매 의사. 이미 메모에 있는 내용은 묻지 마세요.
 질문은 한 문장, 쉬운 말로. 이모지는 쓰지 마세요.
-상품명: ${product}
-지금 메모: ${$("experience").value.trim() || "(없음)"}` }],
+상품명: ${product || "(사진 참고)"}
+지금 메모: ${$("experience").value.trim() || "(없음)"}` }] }],
     });
     if (msg.stop_reason === "refusal") throw new Error("질문을 만들지 못했어요. 다시 해 보세요.");
     const txt = msg.content.filter(b => b.type === "text").map(b => b.text).join("");
@@ -475,10 +537,10 @@ function answersText(){
 }
 
 // ---------- 리뷰 한 개 생성 (공통) ----------
-async function writeReview({ apiKey, product, exp, onText, onStatus, signal }){
+async function writeReview({ apiKey, product, exp, onText, onStatus, signal, images = [] }){
   const extra = $("extra").value.trim();
-  const userMsg = `상품명: ${product}
-
+  const userMsg = `상품명: ${product || "(비어 있음 — 첨부한 사진에서 상품명을 알아내 조사해 주세요)"}
+${images.length ? "\n" + PHOTO_NOTE(images.length) + "\n" : ""}
 내 사용 경험:
 ${exp || "(아직 적지 않음 — 직접 써 봐야 아는 부분은 모두 [직접 확인: …] 빈칸으로 남겨 주세요)"}
 
@@ -493,7 +555,7 @@ ${extra ? "추가 요청: " + extra : ""}
 ${$("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 넣어 주세요.` : ''}`;
 
   const c = client(apiKey);
-  const messages = [{ role: "user", content: userMsg }];
+  const messages = [{ role: "user", content: images.length ? [...images, { type: "text", text: userMsg }] : userMsg }];
   const sources = [];
   let text = "";
   for (let turn = 0; turn < 4; turn++){
@@ -548,16 +610,17 @@ $("stopBtn").onclick = () => abortCtl?.abort();
 async function runOne(){
   const apiKey = getKey(); if (!apiKey) return;
   const product = $("product").value.trim();
-  if (!product){ status("상품명을 넣어 주세요.", true); $("product").focus(); return; }
+  if (!product && !photos.length){ status("상품명을 넣거나 사진을 넣어 주세요.", true); $("product").focus(); return; }
   if (running) return;
   startRun(); $("out").textContent = ""; lastSources = [];
   const ans = answersText();
   const exp = [$("experience").value.trim(), ans ? "질문에 대한 내 답:\n" + ans : ""].filter(Boolean).join("\n\n");
   status("🔎 상품 정보를 찾고 있어요… (30초~1분쯤 걸려요)");
   try {
-    const r = await writeReview({ apiKey, product, exp, signal: abortCtl.signal, onStatus: status, onText: t => render(t, true) });
+    const r = await writeReview({ apiKey, product, exp, images: imageBlocks(), signal: abortCtl.signal, onStatus: status, onText: t => render(t, true) });
     lastSources = r.sources; render(r.text, false);
-    addHistory(product, r.text);
+    const title = (/^제목:\s*(.+)$/m.exec(r.text) || [])[1];
+    addHistory(product || (title ? "(사진) " + title.trim() : "사진으로 쓴 리뷰"), r.text);
     status(r.cut ? "⚠️ 글이 길어 중간에 끊겼을 수 있어요." : "완성! 내용을 확인하고 다듬어서 올려 주세요.", r.cut);
   } catch (e){ console.error(e); status("❌ " + errMsg(e), true); }
   finally { endRun(); }
