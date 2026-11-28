@@ -83,6 +83,8 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 .dday{font-weight:700}
 .ok{color:var(--good)} .no{color:var(--bad)}
 .count{font-size:14px;margin:10px 0 0;font-weight:600}
+.editor{min-height:320px;max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font-size:15px;line-height:1.7;outline:none}
+.editor:focus{border-color:var(--accent)}
 #syncState.ok{color:var(--good);font-size:14px}
 #syncState.err{color:var(--bad);font-size:14px}
 .prow{display:flex;gap:8px;align-items:stretch}
@@ -879,9 +881,22 @@ function openEditor(it, box){
   const rest = (photos ? "\n\n===찍을 사진===\n" + photos : "") + (checks ? "\n\n===확인할 점===\n" + checks : "");
   box.innerHTML = "";
   const h4 = document.createElement("h4"); h4.textContent = it.product;
-  const ta = document.createElement("textarea"); ta.value = review; ta.style.minHeight = "320px";
+  // 글을 고칠 수 있는 칸: 노란 빈칸은 노랗게 보이고, 그 안을 고치면 검정 글씨로 바뀜
+  const ta = document.createElement("div"); ta.className = "editor";
+  try { ta.contentEditable = "plaintext-only"; } catch { ta.contentEditable = "true"; }
+  if (ta.contentEditable !== "plaintext-only") ta.contentEditable = "true";
+  ta.innerHTML = escapeHtml(review).replace(/\[직접 확인:([^\]]*)\]/g, '<span class="fill">[직접 확인:$1]</span>');
+  Object.defineProperty(ta, "value", { get: () => ta.innerText.replace(/\u00a0/g, " ") });
   const cnt = document.createElement("p"); cnt.className = "count";
-  const upd = () => { cnt.innerHTML = countHtml(ta.value.trim(), it.kind); };
+  const left = document.createElement("p"); left.className = "hint";
+  const upd = () => {
+    for (const sp of ta.querySelectorAll("span.fill")){
+      if (!/^\[직접 확인:[^\]]*\]$/.test(sp.textContent)) sp.classList.remove("fill"); // 고친 빈칸 → 검정 글씨 (커서 위치는 그대로)
+    }
+    const n = ta.querySelectorAll("span.fill").length;
+    left.textContent = n ? `노란 빈칸이 ${n}개 남았어요. 빈칸을 지우고 내 경험으로 고쳐 쓰면 검정 글씨로 바뀌어요.` : "노란 빈칸을 모두 채웠어요.";
+    cnt.innerHTML = countHtml(ta.value.trim(), it.kind);
+  };
   ta.addEventListener("input", upd); upd();
   const btns = document.createElement("div"); btns.className = "btns";
   const sv = document.createElement("button"); sv.className = "ghost small"; sv.textContent = "💾 저장";
@@ -889,7 +904,7 @@ function openEditor(it, box){
   const cc = document.createElement("button"); cc.className = "ghost small"; cc.textContent = "취소"; cc.onclick = renderHist;
   const cp = document.createElement("button"); cp.className = "ghost small"; cp.textContent = "📋 복사"; cp.onclick = () => copyText(ta.value.trim());
   btns.append(sv, cp, cc);
-  box.append(h4, ta, cnt, btns);
+  box.append(h4, left, ta, cnt, btns);
   ta.focus();
 }
 $("histClear").onclick = () => {
