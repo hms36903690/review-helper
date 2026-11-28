@@ -243,7 +243,7 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
       </div>
     </div>
 
-    <label class="check"><input id="disclose" type="checkbox" checked> <span id="discloseText"></span></label>
+    <label class="check" id="discloseRow"><input id="disclose" type="checkbox" checked> <span id="discloseText"></span></label>
 
     <button class="primary" id="go">리뷰 만들기</button>
     <button class="ghost hidden" id="stopBtn" style="width:100%;margin-top:8px">멈추기</button>
@@ -393,6 +393,7 @@ const TRIAL_MIN = 200, TRIAL_MAX = 700;
 function syncKind(){
   const k = kind();
   $("discloseText").innerHTML = KINDS[k].check;
+  $("discloseRow").classList.toggle("hidden", k === "trial"); // 체험단은 쿠팡이 체험단 문구를 자동으로 붙여 줌
   $("disclose").checked = store.get("review-helper-disclose2-" + k) !== "0"; // 기본: 체크됨
   $("trialGuide").classList.toggle("hidden", k !== "trial");
   const sel = $("length"); sel.innerHTML = "";
@@ -622,7 +623,7 @@ ${kind() === "trial" ? `체험단 글자수 규칙(반드시 지키기): 리뷰 
 글 구성: ${STRUCTURES[$("structure").value]}
 ${$("greeting").value.trim() ? `본문 첫 줄은 이 인사로 시작: "${$("greeting").value.trim()}"` : ""}
 ${extra ? "추가 요청: " + extra : ""}
-${$("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 넣어 주세요.` : ''}`;
+${kind() !== "trial" && $("disclose").checked ? `본문 마지막 줄에 "${KINDS[kind()].line}" 를 넣어 주세요.` : ''}`;
 
   const c = client(apiKey);
   const messages = [{ role: "user", content: images.length ? [...images, { type: "text", text: userMsg }] : userMsg }];
