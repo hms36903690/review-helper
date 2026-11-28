@@ -254,7 +254,8 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
   <div id="status"></div>
 
   <div id="resultCard" class="card hidden">
-    <div class="notice" id="fillNotice">노란색 <span class="fill">[직접 확인: …]</span> 부분은 직접 써 봐야 알 수 있는 내용이에요. 내 경험으로 채우거나 지워 주세요.</div>
+    <div class="notice" id="fillNotice">노란색 <span class="fill">[직접 확인: …]</span> 부분은 직접 써 봐야 알 수 있는 내용이에요. <b>아래 글을 눌러 바로 고칠 수 있어요.</b> 고친 내용은 작성 기록에 자동으로 저장돼요.<br><span id="fillLeft"></span></div>
+    <p class="hint" style="margin:8px 0 0">✏️ 글을 눌러서 바로 고칠 수 있어요.</p>
     <div id="out" class="out"></div>
     <p id="countLine" class="count"></p>
     <div class="btns">
@@ -673,6 +674,7 @@ ${kind() !== "trial" && $("disclose").checked ? `본문 마지막 줄에 "${KIND
 
 // ---------- 실행 ----------
 function startRun(){
+  lastHistId = null;
   running = true; abortCtl = new AbortController();
   $("go").disabled = true; $("stopBtn").classList.remove("hidden");
   ["resultCard","checkCard","srcCard","batchCard","photoCard"].forEach(id => $(id).classList.add("hidden"));
@@ -691,9 +693,10 @@ async function runOne(){
   status("🔎 상품 정보를 찾고 있어요… (30초~1분쯤 걸려요)");
   try {
     const r = await writeReview({ apiKey, product, exp, images: imageBlocks(), signal: abortCtl.signal, onStatus: status, onText: t => render(t, true) });
-    lastSources = r.sources; render(r.text, false);
+    lastSources = r.sources;
     const title = (/^제목:\s*(.+)$/m.exec(r.text) || [])[1];
     addHistory(product || (title ? "(이미지) " + title.trim() : "이미지로 쓴 리뷰"), r.text);
+    render(r.text, false);
     const miss = missingHeads(splitText(r.text).review);
     if (r.cut) status("⚠️ 글이 길어 중간에 끊겼을 수 있어요.", true);
     else if (miss.length) status(`⚠️ 빠진 소제목이 있어요: ${miss.join(", ")} — 다시 쓰기를 누르거나 직접 넣어 주세요.`, true);
@@ -732,14 +735,23 @@ async function runMany(){
         onStatus: m => { c.meta.textContent = m.replace(/^\S+\s/, ""); },
         onText: () => {} });
       const { review, checks, photos } = splitText(r.text);
-      c.body.innerHTML = fmt(review) + '<p class="count">' + countHtml(review, kind()) + '</p>'
-        + (photos && kind() === "trial" ? '<h3>찍어서 올릴 사진 (필수 · 7장 이내)</h3>' + fmt(photos) : "")
+      const hid = addHistory(product, r.text); done++;
+      const rest = (photos ? "\n\n===찍을 사진===\n" + photos : "") + (checks ? "\n\n===확인할 점===\n" + checks : "");
+      c.body.innerHTML = "";
+      const left = document.createElement("p"); left.className = "hint";
+      const ed = document.createElement("div"); ed.innerHTML = fmt(review);
+      const cntEl = document.createElement("p"); cntEl.className = "count";
+      const extra = document.createElement("div");
+      extra.innerHTML = (photos && kind() === "trial" ? '<h3>찍어서 올릴 사진 (필수 · 7장 이내)</h3>' + fmt(photos) : "")
         + (checks ? '<h3>올리기 전에 확인할 점</h3>' + fmt(checks) : "");
+      c.body.append(left, ed, cntEl, extra);
+      c.body.style.maxHeight = "none";
+      let cur = review;
+      const getText = makeEditable(ed, kind(), { countEl: cntEl, leftEl: left, onChange: (t) => { cur = t; histUpdate(hid, { text: t + rest }); } });
       const miss = missingHeads(review);
       c.meta.textContent = (miss.length ? "완성 · 빠진 소제목: " + miss.join(", ") : "완성") + (/\[직접 확인:/.test(review) ? " · 빈칸 있음" : "");
       c.btns.classList.remove("hidden");
-      c.cp.onclick = () => copyText(review);
-      addHistory(product, r.text); done++;
+      c.cp.onclick = () => copyText(cur = getText());
     } catch (e){
       console.error(e);
       c.meta.textContent = "실패: " + errMsg(e); c.meta.classList.add("danger");
@@ -783,15 +795,45 @@ function fmt(t){
 }
 // 복사할 때는 화면용 꾸밈 없이 원래 글 그대로
 let currentReview = "";
+// 글을 바로 고칠 수 있게 만들기: 노란 빈칸은 노랗게, 고친 빈칸은 검정 글씨로
+function makeEditable(el, k, { countEl, leftEl, onChange }){
+  try { el.contentEditable = "plaintext-only"; } catch {}
+  if (el.contentEditable !== "plaintext-only") el.contentEditable = "true";
+  el.classList.add("editor");
+  const getText = () => el.innerText.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  let timer = null;
+  const upd = (changed) => {
+    for (const sp of el.querySelectorAll("span.fill"))
+      if (!/^\[직접 확인:[^\]]*\]$/.test(sp.textContent)) sp.classList.remove("fill"); // 커서 위치는 그대로
+    const n = el.querySelectorAll("span.fill").length, t = getText();
+    if (leftEl) leftEl.textContent = n ? `노란 빈칸이 ${n}개 남았어요. 빈칸을 지우고 내 경험으로 고쳐 쓰면 검정 글씨로 바뀌어요.` : "노란 빈칸을 모두 채웠어요.";
+    if (countEl) countEl.innerHTML = countHtml(t, k);
+    if (changed && onChange){ clearTimeout(timer); timer = setTimeout(() => onChange(t), 800); }
+  };
+  el.addEventListener("input", () => upd(true));
+  el.addEventListener("blur", () => { if (timer){ clearTimeout(timer); timer = null; onChange?.(getText()); } });
+  upd(false);
+  return getText;
+}
+
 function render(text, streaming){
   const { review, checks, photos } = splitText(stripPics(text));
   currentReview = review;
   $("resultCard").classList.remove("hidden");
-  $("out").innerHTML = fmt(review);
+  const out = $("out");
+  out.contentEditable = "false"; out.classList.remove("editor");
+  out.innerHTML = fmt(review);
   $("countLine").innerHTML = countHtml(review, kind());
   $("photoCard").classList.toggle("hidden", !photos || kind() !== "trial");
   if (photos) $("photos").innerHTML = fmt(photos);
   $("fillNotice").classList.toggle("hidden", !/\[직접 확인:/.test(review));
+  if (!streaming){
+    const rest = (photos ? "\n\n===찍을 사진===\n" + photos : "") + (checks ? "\n\n===확인할 점===\n" + checks : "");
+    const k = kind();
+    const getText = makeEditable(out, k, { countEl: $("countLine"), leftEl: $("fillLeft"),
+      onChange: (t) => { currentReview = t; if (lastHistId) histUpdate(lastHistId, { text: t + rest }); } });
+    $("copy").onclick = () => copyText(currentReview = getText());
+  }
   $("checkCard").classList.toggle("hidden", !checks);
   if (checks) $("checks").innerHTML = fmt(checks);
   if (!streaming && lastSources.length){
@@ -810,6 +852,7 @@ async function copyText(t){
   catch { status("복사가 안 됐어요. 글을 드래그해서 직접 복사해 주세요.", true); }
 }
 $("copy").onclick = () => copyText(currentReview);
+let lastHistId = null;
 
 // ---------- 작성 기록 (이 기기 + 로그인하면 PC·휴대폰 연동) ----------
 const HIST = "review-helper-history";
@@ -834,8 +877,11 @@ function histDelete(id){
   if (SYNC.user) cloudDel(id); else renderHist();
 }
 function addHistory(product, text){
-  histAdd({ id: docId(Date.now() + "_" + Math.random().toString(36).slice(2, 8)), at: new Date().toISOString(), kind: kind(), product, text,
+  const id = docId(Date.now() + "_" + Math.random().toString(36).slice(2, 8));
+  lastHistId = id;
+  histAdd({ id, at: new Date().toISOString(), kind: kind(), product, text,
             invite: kind() === "trial" ? $("inviteDate").value : "", done: false });
+  return id;
 }
 
 function renderHist(){
